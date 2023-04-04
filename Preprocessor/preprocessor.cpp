@@ -14,11 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include <vector>
 #include <thread>
 #include <filesystem>
+#include <algorithm>
 
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
+#include <cassert>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 ////////////////////////////////////////
 #define PREPROCESSOR_VERSION_MAJOR 0
@@ -27,11 +40,23 @@
 ////////////////////////////////////////
 struct Config
 {
-    std::string rootDirPath{ "." };
-    bool quiet{};
+private:
+    std::string mRootDirPath{ "." };
+    bool mQuiet{};
+    int mSize{ 32 };
+
+public:
+    Config(int argc, char** argv);
+
+    std::string GetRootDirPath() const { return mRootDirPath; }
+    const char* GetRootDirPathStr() const { return mRootDirPath.c_str(); }
+
+    bool BeQuiet() const { return mQuiet; }
+
+    int GetSize() const { return mSize; }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////
 static void ParseArgAssert(int argc, int i, const char* argName)
 {
     if (argc - 1 == i)
@@ -42,9 +67,8 @@ static void ParseArgAssert(int argc, int i, const char* argName)
 }
 
 ////////////////////////////////////////
-static Config ParseArgs(int argc, char** argv)
+Config::Config(int argc, char** argv)
 {
-    Config config;
     for (int i = 1; i < argc; ++i)
     {
         ////////////////////////////////////////
@@ -60,6 +84,7 @@ static Config ParseArgs(int argc, char** argv)
             std::printf("\t--version:\t Print the version number\n");
             std::printf("\t--quiet:\t Don't write to stdout\n");
             std::printf("\t--root-dir:\t Directory containing the dataset\n");
+            std::printf("\t--size:\t\t Specify a size for output images\n");
 
             std::exit(EXIT_SUCCESS);
         }
@@ -92,7 +117,7 @@ static Config ParseArgs(int argc, char** argv)
 
         if (!std::strncmp("--quiet", argv[i], 50))
         {
-            config.quiet = true;
+            mQuiet = true;
         }
 
         ////////////////////////////////////////
@@ -102,20 +127,220 @@ static Config ParseArgs(int argc, char** argv)
         if (!std::strncmp("--root-dir", argv[i], 50))
         {
             ParseArgAssert(argc, i, "--root-dir");
-            config.rootDirPath = argv[i + 1];
+            mRootDirPath = argv[i + 1];
+        }
+
+        if (!std::strncmp("--size", argv[i], 50))
+        {
+            ParseArgAssert(argc, i, "--size");
+            mSize = std::atoi(argv[i + 1]);
+            if (mSize <= 0)
+            {
+                std::fprintf(stderr, "ERROR: %d is an invalid size\n", mSize);
+                std::exit(EXIT_FAILURE);
+            }
         }
     }
-    return config;
+}
+
+////////////////////////////////////////
+struct Processor
+{
+private:
+    std::uint32_t mTrainNormalCount{};
+    std::uint32_t mTrainVirusCount{};
+    std::uint32_t mTrainBacteriaCount{};
+
+    std::uint32_t mTestNormalCount{};
+    std::uint32_t mTestVirusCount{};
+    std::uint32_t mTestBacteriaCount{};
+
+    std::string mPath;
+
+    bool mFailed{};
+    std::string mFailureMessage;
+
+    int mOutSize;
+
+    void Process(const std::string&);
+    void ProcessNormalPath(const std::filesystem::path&, const char*, std::uint32_t&);
+    void ProcessAbnormalPath(const std::filesystem::path&, const char*, const char*, std::uint32_t&, std::uint32_t&);
+    void ResizeAndSave(const char*, const char*, std::uint32_t);
+
+public:
+    explicit Processor(const Config&);
+
+    void Print() const;
+
+    bool HasFailed() const                      { return mFailed; }
+    std::string GetFailureMessage() const       { return mFailureMessage; }
+
+    std::uint32_t GetTrainNormalCount() const   { return mTrainNormalCount; }
+    std::uint32_t GetTrainVirusCount() const    { return mTrainVirusCount; }
+    std::uint32_t GetTrainBacteriaCount() const { return mTrainBacteriaCount; }
+
+    std::uint32_t GetTestNormalCount() const    { return mTestNormalCount; }
+    std::uint32_t GetTestVirusCount() const     { return mTestVirusCount; }
+    std::uint32_t GetTestBacteriaCount() const  { return mTestBacteriaCount; }
+
+    std::uint32_t GetTotalTrainCount() const    { return mTrainNormalCount + mTrainVirusCount + mTrainBacteriaCount; }
+    std::uint32_t GetTotalTestCount() const     { return mTestNormalCount + mTestVirusCount + mTestBacteriaCount; }
+
+    std::string GetPath() const                 { return mPath; }
+};
+
+////////////////////////////////////////
+void Processor::ResizeAndSave(const char* url, const char* stem, std::uint32_t count)
+{
+    int width, height, channelCount;
+    stbi_uc* pixels = stbi_load(url, &width, &height, &channelCount, 1);
+    if (!pixels)
+    {
+        mFailed = true;
+        mFailureMessage = "Failed to load " + std::string(url);
+        return;
+    }
+
+    stbi_uc* newPixels = static_cast<stbi_uc*>(std::malloc(mOutSize * mOutSize));
+    if (!newPixels)
+    {
+        mFailed = true;
+        mFailureMessage = "Failed to allocate memory";
+        stbi_image_free(pixels);
+        return;
+    }
+
+    stbir_resize_uint8(pixels, width, height, 0, newPixels, mOutSize, mOutSize, 0, 1);
+    stbi_image_free(pixels);
+
+    std::string newFilename{ std::string(stem) + std::to_string(count) + std::string(".png") };
+    stbi_write_png(newFilename.c_str(), mOutSize, mOutSize, 1, newPixels, 0);
+
+    stbi_image_free(newPixels);
+}
+
+////////////////////////////////////////
+void Processor::ProcessNormalPath(const std::filesystem::path& dataPath, const char* stem, std::uint32_t& counter)
+{
+    for (const auto& entry : std::filesystem::directory_iterator(dataPath))
+    {
+        if (std::filesystem::is_regular_file(entry) && !std::filesystem::is_empty(entry) && entry.path().extension() == ".jpeg")
+        {
+            const char* url = entry.path().c_str();
+            ResizeAndSave(url, stem, counter);
+            ++counter;
+        }
+    }
+}
+
+////////////////////////////////////////
+void Processor::ProcessAbnormalPath(const std::filesystem::path& dataPath, const char* bacteriaStem, const char* virusStem,
+                                                                           std::uint32_t& bacteriaCounter, std::uint32_t& virusCounter)
+{
+    for (const auto& entry : std::filesystem::directory_iterator(dataPath))
+    {
+        if (std::filesystem::is_regular_file(entry) && !std::filesystem::is_empty(entry) && entry.path().extension() == ".jpeg")
+        {
+            const char* url = entry.path().c_str();
+            if (entry.path().string().find("bacteria") != std::string::npos)
+            {
+                ResizeAndSave(url, bacteriaStem, bacteriaCounter);
+                ++bacteriaCounter;
+            }
+            else if (entry.path().string().find("virus") != std::string::npos)
+            {
+                ResizeAndSave(url, virusStem, virusCounter);
+                ++virusCounter;
+            }
+        }
+    }
+}
+
+////////////////////////////////////////
+void Processor::Process(const std::string& dirPath)
+{
+    const std::filesystem::path dataPath{ mPath + dirPath };
+    if (!std::filesystem::is_directory(dataPath))
+    {
+        mFailed = true;
+        mFailureMessage = dataPath.string() + " is not a directory";
+        return;
+    }
+
+    bool isNormalDataset{ dirPath.find("NORMAL") != std::string::npos };
+    bool isTrainingDataset{ dirPath.find("train") != std::string::npos };
+
+    if (isNormalDataset)
+    {
+        if (isTrainingDataset)
+        {
+            ProcessNormalPath(dataPath, "normal_train_", mTrainNormalCount);
+        }
+        else
+        {
+            ProcessNormalPath(dataPath, "normal_test_", mTestNormalCount);
+        }
+    }
+    else
+    {
+        if (isTrainingDataset)
+        {
+            ProcessAbnormalPath(dataPath, "bacteria_train_", "virus_train_", mTrainBacteriaCount, mTrainVirusCount);
+        }
+        else
+        {
+            ProcessAbnormalPath(dataPath, "bacteria_test_", "virus_test_", mTestBacteriaCount, mTestVirusCount);
+        }
+    }
+}
+
+////////////////////////////////////////
+Processor::Processor(const Config& config)
+    : mPath{config.GetRootDirPath()}, mOutSize{config.GetSize()}
+{
+    assert(mOutSize > 0);
+    std::vector<std::thread> threadPool;
+
+    threadPool.push_back(std::thread(&Processor::Process, this, "/train/NORMAL"));
+    threadPool.push_back(std::thread(&Processor::Process, this, "/train/PNEUMONIA"));
+    threadPool.push_back(std::thread(&Processor::Process, this, "/test/NORMAL"));
+    threadPool.push_back(std::thread(&Processor::Process, this, "/test/PNEUMONIA"));
+
+    std::ranges::for_each(threadPool, [](auto& task){ task.join(); });
 }
 
 ////////////////////////////////////////
 int main(int argc, char** argv)
 {
-    Config config = ParseArgs(argc, argv);
+    Config config(argc, argv);
 
-    if (!config.quiet)
+    if (!config.BeQuiet())
     {
-        std::printf("Root Directory: %s\n", config.rootDirPath.c_str());
+        std::printf("Root Directory: %s\n", config.GetRootDirPathStr());
+        std::printf("Started processing. This can take a while ...\n");
+    }
+
+    Processor processor(config);
+    if (processor.HasFailed())
+    {
+        std::fprintf(stderr, "ERROR: preprocessor failed: %s\n", processor.GetFailureMessage().c_str());
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!config.BeQuiet())
+    {
+        std::printf("Results:\n");
+
+        std::printf("Total number of training images: %u\n", processor.GetTotalTrainCount());
+        std::printf("Total number of test images: %u\n", processor.GetTotalTestCount());
+
+        std::printf("Number of normal training images processed: %u\n", processor.GetTrainNormalCount());
+        std::printf("Number of virus training images processed: %u\n", processor.GetTrainVirusCount());
+        std::printf("Number of bacteria training images processed: %u\n", processor.GetTrainBacteriaCount());
+
+        std::printf("Number of normal test images processed: %u\n", processor.GetTestNormalCount());
+        std::printf("Number of virus test images processed: %u\n", processor.GetTestVirusCount());
+        std::printf("Number of bacteria test images processed: %u\n", processor.GetTestBacteriaCount());
     }
 
     return 0;

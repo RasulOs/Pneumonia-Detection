@@ -157,13 +157,27 @@ private:
 
     int mOutSize;
 
+    enum BlockType { BlockType_TrainNormal, BlockType_TrainAbnormal,
+                     BlockType_TestNormal, BlockType_TestAbnormal,
+                     BlockType_Count };
+
+    std::uint8_t* mBlocks[BlockType_Count];
+
     void Process(const std::string&);
-    void ProcessNormalPath(const std::filesystem::path&, const char*, std::uint32_t&);
-    void ProcessAbnormalPath(const std::filesystem::path&, const char*, const char*, std::uint32_t&, std::uint32_t&);
-    void ResizeAndSave(const char*, const char*, std::uint32_t);
+    void ProcessNormalPath(const std::filesystem::path&, const char*, std::uint32_t&, std::uint8_t*);
+    void ProcessAbnormalPath(const std::filesystem::path&, const char*, const char*, std::uint32_t&, std::uint32_t&, std::uint8_t*);
+    void ResizeAndSave(const char*, const char*, std::uint32_t, std::uint8_t*);
 
 public:
     explicit Processor(const Config&);
+
+    ~Processor();
+
+    Processor(const Processor&)                 = delete;
+    Processor& operator=(const Processor&)      = delete;
+
+    Processor(Processor&&)                      = delete;
+    Processor& operator=(Processor&&)           = delete;
 
     void Print() const;
 
@@ -185,7 +199,55 @@ public:
 };
 
 ////////////////////////////////////////
-void Processor::ResizeAndSave(const char* url, const char* stem, std::uint32_t count)
+Processor::~Processor()
+{
+    for (std::uint32_t i = 0; i < BlockType_Count; ++i)
+    {
+        std::free(mBlocks[i]);
+    }
+}
+
+#if 0
+
+////////////////////////////////////////
+static void LoadFromBinary(const char* url, std::uint8_t* memoryBlock, std::uint32_t memoryBlockMaxSize)
+{
+    FILE* file = std::fopen(url, "rb");
+    if (!file)
+    {
+        std::fprintf(stderr, "ERROR: failed to load %s\n", url);
+        std::quick_exit(EXIT_FAILURE);
+    }
+
+    std::fseek(file, 0, SEEK_END);
+    std::uint32_t fileSize = static_cast<std::uint32_t>(std::ftell(file));
+    std::fseek(file, 0, SEEK_SET);
+
+    if (fileSize == std::numeric_limits<std::uint32_t>::max())
+    {
+        std::fprintf(stderr, "ERROR: std::ftell returned an error\n");
+        std::quick_exit(EXIT_FAILURE);
+    }
+    else if (memoryBlockMaxSize < fileSize)
+    {
+        std::fprintf(stderr, "ERROR: memoryBlockMaxSize (%u) is smaller than fileSize (%u) for %s\n", memoryBlockMaxSize, fileSize, url);
+        std::quick_exit(EXIT_FAILURE);
+    }
+
+    std::uint32_t bytesRead = static_cast<std::uint32_t>(std::fread(memoryBlock, sizeof(std::uint8_t), fileSize, file));
+    if (bytesRead != fileSize)
+    {
+        std::fprintf(stderr, "ERROR: Failed to read binary data from %s\n", url);
+        std::quick_exit(EXIT_FAILURE);
+    }
+
+    std::fclose(file);
+}
+
+#endif
+
+////////////////////////////////////////
+void Processor::ResizeAndSave(const char* url, const char* stem, std::uint32_t count, std::uint8_t* memoryBlock)
 {
     int width, height, channelCount;
     stbi_uc* pixels = stbi_load(url, &width, &height, &channelCount, 1);
@@ -196,33 +258,22 @@ void Processor::ResizeAndSave(const char* url, const char* stem, std::uint32_t c
         return;
     }
 
-    stbi_uc* newPixels = static_cast<stbi_uc*>(std::malloc(static_cast<std::size_t>(mOutSize * mOutSize)));
-    if (!newPixels)
-    {
-        mFailed = true;
-        mFailureMessage = "Failed to allocate memory";
-        stbi_image_free(pixels);
-        return;
-    }
-
-    stbir_resize_uint8(pixels, width, height, 0, newPixels, mOutSize, mOutSize, 0, 1);
+    stbir_resize_uint8(pixels, width, height, 0, memoryBlock, mOutSize, mOutSize, 0, 1);
     stbi_image_free(pixels);
 
     std::string newFilename{ std::string(stem) + std::to_string(count) + std::string(".png") };
-    stbi_write_png(newFilename.c_str(), mOutSize, mOutSize, 1, newPixels, 0);
-
-    stbi_image_free(newPixels);
+    stbi_write_png(newFilename.c_str(), mOutSize, mOutSize, 1, memoryBlock, 0);
 }
 
 ////////////////////////////////////////
-void Processor::ProcessNormalPath(const std::filesystem::path& dataPath, const char* stem, std::uint32_t& counter)
+void Processor::ProcessNormalPath(const std::filesystem::path& dataPath, const char* stem, std::uint32_t& counter, std::uint8_t* memoryBlock)
 {
     for (const auto& entry : std::filesystem::directory_iterator(dataPath))
     {
         if (std::filesystem::is_regular_file(entry) && !std::filesystem::is_empty(entry) && entry.path().extension() == ".jpeg")
         {
             const char* url = entry.path().c_str();
-            ResizeAndSave(url, stem, counter);
+            ResizeAndSave(url, stem, counter, memoryBlock);
             ++counter;
         }
     }
@@ -230,7 +281,8 @@ void Processor::ProcessNormalPath(const std::filesystem::path& dataPath, const c
 
 ////////////////////////////////////////
 void Processor::ProcessAbnormalPath(const std::filesystem::path& dataPath, const char* bacteriaStem, const char* virusStem,
-                                                                           std::uint32_t& bacteriaCounter, std::uint32_t& virusCounter)
+                                                                           std::uint32_t& bacteriaCounter, std::uint32_t& virusCounter,
+                                                                           std::uint8_t* block)
 {
     for (const auto& entry : std::filesystem::directory_iterator(dataPath))
     {
@@ -239,12 +291,12 @@ void Processor::ProcessAbnormalPath(const std::filesystem::path& dataPath, const
             const char* url = entry.path().c_str();
             if (entry.path().string().find("bacteria") != std::string::npos)
             {
-                ResizeAndSave(url, bacteriaStem, bacteriaCounter);
+                ResizeAndSave(url, bacteriaStem, bacteriaCounter, block);
                 ++bacteriaCounter;
             }
             else if (entry.path().string().find("virus") != std::string::npos)
             {
-                ResizeAndSave(url, virusStem, virusCounter);
+                ResizeAndSave(url, virusStem, virusCounter, block);
                 ++virusCounter;
             }
         }
@@ -269,22 +321,26 @@ void Processor::Process(const std::string& dirPath)
     {
         if (isTrainingDataset)
         {
-            ProcessNormalPath(dataPath, "normal_train_", mTrainNormalCount);
+            ProcessNormalPath(dataPath, "normal_train_", mTrainNormalCount, mBlocks[BlockType_TrainNormal]);
         }
         else
         {
-            ProcessNormalPath(dataPath, "normal_test_", mTestNormalCount);
+            ProcessNormalPath(dataPath, "normal_test_", mTestNormalCount, mBlocks[BlockType_TestNormal]);
         }
     }
     else
     {
         if (isTrainingDataset)
         {
-            ProcessAbnormalPath(dataPath, "bacteria_train_", "virus_train_", mTrainBacteriaCount, mTrainVirusCount);
+            ProcessAbnormalPath(dataPath, "bacteria_train_", "virus_train_",
+                                          mTrainBacteriaCount, mTrainVirusCount,
+                                          mBlocks[BlockType_TrainAbnormal]);
         }
         else
         {
-            ProcessAbnormalPath(dataPath, "bacteria_test_", "virus_test_", mTestBacteriaCount, mTestVirusCount);
+            ProcessAbnormalPath(dataPath, "bacteria_test_", "virus_test_",
+                                          mTestBacteriaCount, mTestVirusCount,
+                                          mBlocks[BlockType_TestAbnormal]);
         }
     }
 }
@@ -294,8 +350,19 @@ Processor::Processor(const Config& config)
     : mPath{config.GetRootDirPath()}, mOutSize{config.GetSize()}
 {
     assert(mOutSize > 0);
-    std::vector<std::thread> threadPool;
 
+    for (std::uint32_t i = 0; i < BlockType_Count; ++i)
+    {
+        mBlocks[i] = static_cast<std::uint8_t*>(std::malloc(static_cast<std::size_t>(mOutSize * mOutSize)));
+        if (!mBlocks[i])
+        {
+            mFailureMessage = "Failed to allocate memory for blocks in the constructor";
+            mFailed = true;
+            return;
+        }
+    }
+
+    std::vector<std::thread> threadPool;
     threadPool.push_back(std::thread(&Processor::Process, this, "/train/NORMAL"));
     threadPool.push_back(std::thread(&Processor::Process, this, "/train/PNEUMONIA"));
     threadPool.push_back(std::thread(&Processor::Process, this, "/test/NORMAL"));

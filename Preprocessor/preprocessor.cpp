@@ -24,13 +24,8 @@
 #include <cstdint>
 #include <cassert>
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb_image_resize.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
 ////////////////////////////////////////
@@ -201,7 +196,7 @@ void Processor::ResizeAndSave(const char* url, const char* stem, std::uint32_t c
         return;
     }
 
-    stbi_uc* newPixels = static_cast<stbi_uc*>(std::malloc(mOutSize * mOutSize));
+    stbi_uc* newPixels = static_cast<stbi_uc*>(std::malloc(static_cast<std::size_t>(mOutSize * mOutSize)));
     if (!newPixels)
     {
         mFailed = true;

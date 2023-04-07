@@ -4,6 +4,54 @@ workspace "preprocessor"
     configurations { "debug", "release" }
     location "build"
 
+project "stb_image"
+    kind "StaticLib"
+    language "C"
+    location "build/stb_image"
+    targetdir "build/%{cfg.buildcfg}"
+
+    files { "stb_image.c" }
+
+    filter "configurations:Debug"
+        defines { "_DEBUG", "DEBUG" }
+        symbols "On"
+
+    filter "configurations:Release"
+        defines { "NDEBUG" }
+        optimize "On"
+
+project "stb_image_resize"
+    kind "StaticLib"
+    language "C"
+    location "build/stb_image_resize"
+    targetdir "build/%{cfg.buildcfg}"
+
+    files { "stb_image_resize.c" }
+
+    filter "configurations:Debug"
+        defines { "_DEBUG", "DEBUG" }
+        symbols "On"
+
+    filter "configurations:Release"
+        defines { "NDEBUG" }
+        optimize "On"
+
+project "stb_image_write"
+    kind "StaticLib"
+    language "C"
+    location "build/stb_image_write"
+    targetdir "build/%{cfg.buildcfg}"
+
+    files { "stb_image_write.c" }
+
+    filter "configurations:Debug"
+        defines { "_DEBUG", "DEBUG" }
+        symbols "On"
+
+    filter "configurations:Release"
+        defines { "NDEBUG" }
+        optimize "On"
+
 project "preprocessor"
     kind "ConsoleApp"
     language "C++"
@@ -11,6 +59,10 @@ project "preprocessor"
     targetdir "build/%{cfg.buildcfg}"
 
     files { "preprocessor.cpp" }
+
+    links { "stb_image",
+            "stb_image_resize",
+            "stb_image_write" }
 
     filter "system:linux"
         links { "pthread" }

@@ -1,4 +1,4 @@
-#ifdef __GNUC__
+#if defined(__GNUC__) && defined(__cplusplus)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wswitch-enum"
@@ -2650,6 +2650,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ------------------------------------------------------------------------------
 */
 
-#ifdef __GNUC__
+#if defined(__GNUC__) && defined(__cplusplus)
 #pragma GCC diagnostic pop
 #endif

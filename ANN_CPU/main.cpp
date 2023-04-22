@@ -105,7 +105,7 @@ Layer Weights::Dot(const Layer& layer) const
         std::printf("ERROR: neuron count %lu != colCount %lu\n", layer.GetNeuronCount(), mColCount);
     }
 
-    std::vector<float> newNeurons(mColCount);
+    std::vector<float> newNeurons(mRowCount);
     for (std::size_t i = 0; i < mRowCount; ++i)
     {
         auto weightBegin = mWeightMatrix.begin() + static_cast<std::int32_t>(i * mColCount);
@@ -125,8 +125,7 @@ Weights Weights::Transpose() const
     {
         for (std::size_t row = 0; row < mRowCount; ++row)
         {
-            res[ind] = mWeightMatrix[row * mColCount + col];
-            ++ind;
+            res[ind++] = mWeightMatrix[row * mColCount + col];
         }
     }
     return Weights(std::move(res), mColCount, mRowCount);

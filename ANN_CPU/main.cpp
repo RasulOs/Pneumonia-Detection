@@ -14,300 +14,509 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include "stb_image.h"
+
 #include <cstdio>
-#include <vector>
 #include <cstdint>
-#include <random>
-#include <algorithm>
 #include <cassert>
+
+#include <random>
+#include <vector>
+#include <algorithm>
 #include <memory>
 #include <functional>
+#include <string>
+#include <filesystem>
 
-    ////////////////////////////////////////
-    struct Layer
+////////////////////////////////////////
+struct Layer
+{
+private:
+    std::vector<float> mNeurons;
+
+public:
+    explicit Layer(std::size_t neuronCount) : mNeurons(neuronCount) {}
+    Layer(float* values, std::size_t valueCount);
+    Layer(std::vector<float>&& values) : mNeurons{std::move(values)} {}
+
+    std::size_t GetNeuronCount() const { return mNeurons.size(); }
+    void Print() const { std::ranges::for_each(mNeurons, [](auto x){ std::printf("%.4f\n", x); }); }
+    void ApplyActivation(std::function<float(float)> activation) { std::ranges::for_each(mNeurons, [&](auto& x){ x = activation(x); }); }
+
+    void SetNeurons(std::vector<float>&& neurons);
+    void SetNeurons(const float* neurons, std::size_t size);
+
+    std::vector<float> GetNeurons() const { return mNeurons; }
+
+    void AddScalar(float s) { std::ranges::for_each(mNeurons, [s](auto& x){ x += s; }); }
+
+    friend struct Weights;
+};
+
+////////////////////////////////////////
+void Layer::SetNeurons(std::vector<float>&& neurons)
+{
+    assert(mNeurons.size() == neurons.size());
+    mNeurons = std::move(neurons);
+}
+
+////////////////////////////////////////
+void Layer::SetNeurons(const float* neurons, std::size_t size)
+{
+    assert(mNeurons.size() == size);
+    for (std::size_t i = 0; i < size; ++i)
     {
-    private:
-        std::vector<float> mNeurons;
+        mNeurons[i] = neurons[i];
+    }
+}
 
-    public:
-        Layer(std::size_t neuronCount, float lowest = 0.0f, float highest = 1.0f);
-        Layer(float* values, std::size_t valueCount);
-        Layer(std::vector<float>&& values) : mNeurons{std::move(values)} {}
+////////////////////////////////////////
+Layer::Layer(float* values, std::size_t valueCount)
+    : mNeurons(valueCount)
+{
+    assert(nullptr != values);
+    for (std::size_t i = 0; i < valueCount; ++i)
+    {
+        mNeurons[i] = values[i];
+    }
+}
 
-        std::size_t GetNeuronCount() const { return mNeurons.size(); }
-        void Print() const { std::ranges::for_each(mNeurons, [](auto x){ std::printf("%.4f\n", x); }); }
-        void ApplyActivation(std::function<float(float)> activation) { std::ranges::for_each(mNeurons, [&](auto& x){ x = activation(x); }); }
+////////////////////////////////////////
+struct Weights
+{
+private:
+    std::size_t mRowCount, mColCount;
+    std::vector<float> mWeightMatrix;
 
-        void SetNeurons(std::vector<float>&& neurons)
+public:
+    Weights(const Layer& layerA, const Layer& layerB,
+            float lowest = -1.0f, float highest = 1.0f);
+
+    Weights(std::vector<float>&& weightMatrix,
+            std::size_t rowCount, std::size_t colCount)
+        : mRowCount{rowCount}, mColCount{colCount},
+          mWeightMatrix{std::move(weightMatrix)} {}
+
+    void Print() const;
+    Layer Dot(const Layer& layer) const;
+    Weights Transpose() const;
+
+    std::size_t GetSize() const { return mRowCount * mColCount; }
+    std::size_t GetRowCount() const { return mRowCount; }
+    std::size_t GetColCount() const { return mColCount; }
+};
+
+////////////////////////////////////////
+using Errors = Weights;
+
+////////////////////////////////////////
+Weights::Weights(const Layer& layerA, const Layer& layerB,
+                 float lowest,
+                 float highest)
+    : mRowCount{ layerB.GetNeuronCount() },
+      mColCount{ layerA.GetNeuronCount() },
+      mWeightMatrix(mRowCount * mColCount)
+{
+    std::random_device rd;
+    std::uniform_real_distribution dist(lowest, highest);
+    std::ranges::for_each(mWeightMatrix, [&](auto& x){ x = dist(rd); });
+}
+
+////////////////////////////////////////
+void Weights::Print() const
+{
+    for (std::size_t row = 0; row < mRowCount; ++row)
+    {
+        for (std::size_t col = 0; col < mColCount; ++col)
         {
-            assert(mNeurons.size() == neurons.size());
-            mNeurons = std::move(neurons);
+            std::printf("%.4f\t", mWeightMatrix[row * mColCount + col]);
         }
-
-        std::vector<float> GetNeurons() const { return mNeurons; }
-
-        void AddScalar(float s) { std::ranges::for_each(mNeurons, [s](auto& x){ x += s; }); }
-
-        friend struct Weights;
-    };
-
-    ////////////////////////////////////////
-    Layer::Layer(std::size_t neuronCount, float lowest, float highest)
-        : mNeurons(neuronCount)
-    {
-        std::random_device rd;
-        std::uniform_real_distribution dist(lowest, highest);
-        std::ranges::for_each(mNeurons, [&](auto& x){ x = dist(rd); });
+        std::putchar('\n');
     }
+}
 
-    ////////////////////////////////////////
-    Layer::Layer(float* values, std::size_t valueCount)
-        : mNeurons(valueCount)
+////////////////////////////////////////
+Layer Weights::Dot(const Layer& layer) const
+{
+    assert(layer.GetNeuronCount() == mColCount);
+
+    std::vector<float> newNeurons(mRowCount);
+    for (std::size_t i = 0; i < mRowCount; ++i)
     {
-        assert(nullptr != values);
-        for (std::size_t i = 0; i < valueCount; ++i)
-        {
-            mNeurons[i] = values[i];
-        }
+        auto weightBegin = mWeightMatrix.begin() + static_cast<std::int32_t>(i * mColCount);
+        auto weightEnd = weightBegin + static_cast<std::int32_t>(mColCount);
+        newNeurons[i] = std::transform_reduce(weightBegin, weightEnd, layer.mNeurons.begin(), 0.0f);
     }
+    return Layer(std::move(newNeurons));
+}
 
-    ////////////////////////////////////////
-    struct Weights
-    {
-    private:
-        std::size_t mRowCount, mColCount;
-        std::vector<float> mWeightMatrix;
+////////////////////////////////////////
+Weights Weights::Transpose() const
+{
+    std::vector<float> res(mRowCount * mColCount);
 
-    public:
-        Weights(const Layer& layerA, const Layer& layerB,
-                float lowest = 0.0f, float highest = 1.0f);
-
-        Weights(std::vector<float>&& weightMatrix,
-                std::size_t rowCount, std::size_t colCount)
-            : mRowCount{rowCount}, mColCount{colCount},
-              mWeightMatrix{std::move(weightMatrix)} {}
-
-        void Print() const;
-        Layer Dot(const Layer& layer) const;
-        Weights Transpose() const;
-
-        std::size_t GetSize() const { return mRowCount * mColCount; }
-        std::size_t GetRowCount() const { return mRowCount; }
-        std::size_t GetColCount() const { return mColCount; }
-    };
-
-    ////////////////////////////////////////
-    using Errors = Weights;
-
-    ////////////////////////////////////////
-    Weights::Weights(const Layer& layerA, const Layer& layerB,
-                     float lowest,
-                     float highest)
-        : mRowCount{ layerB.GetNeuronCount() },
-          mColCount{ layerA.GetNeuronCount() },
-          mWeightMatrix(mRowCount * mColCount)
-    {
-        std::random_device rd;
-        std::uniform_real_distribution dist(lowest, highest);
-        std::ranges::for_each(mWeightMatrix, [&](auto& x){ x = dist(rd); });
-    }
-
-    ////////////////////////////////////////
-    void Weights::Print() const
+    std::size_t ind{};
+    for (std::size_t col = 0; col < mColCount; ++col)
     {
         for (std::size_t row = 0; row < mRowCount; ++row)
         {
-            for (std::size_t col = 0; col < mColCount; ++col)
-            {
-                std::printf("%.4f\t", mWeightMatrix[row * mColCount + col]);
-            }
-            std::putchar('\n');
+            res[ind++] = mWeightMatrix[row * mColCount + col];
         }
     }
+    return Weights(std::move(res), mColCount, mRowCount);
+}
 
-    ////////////////////////////////////////
-    Layer Weights::Dot(const Layer& layer) const
-    {
-        // assert(layer.GetNeuronCount() == mColCount);
-        if (layer.GetNeuronCount() != mColCount)
-        {
-            std::printf("Layer Neuron Count = %lu, # columns = %lu\n", layer.GetNeuronCount(), mColCount);
-        }
+////////////////////////////////////////
+struct ANN
+{
+private:
+    Layer mInputLayer;
+    std::vector<Layer> mHiddenLayers;
+    Layer mOutputLayer;
 
-        std::vector<float> newNeurons(mRowCount);
-        for (std::size_t i = 0; i < mRowCount; ++i)
-        {
-            auto weightBegin = mWeightMatrix.begin() + static_cast<std::int32_t>(i * mColCount);
-            auto weightEnd = weightBegin + static_cast<std::int32_t>(mColCount);
-            newNeurons[i] = std::transform_reduce(weightBegin, weightEnd, layer.mNeurons.begin(), 0.0f);
-        }
-        return Layer(std::move(newNeurons));
-    }
+    std::vector<Weights> mWeights;
+    std::vector<float> mBiases;
 
-    ////////////////////////////////////////
-    Weights Weights::Transpose() const
-    {
-        std::vector<float> res(mRowCount * mColCount);
+    std::size_t mParameterCount;
 
-        std::size_t ind{};
-        for (std::size_t col = 0; col < mColCount; ++col)
-        {
-            for (std::size_t row = 0; row < mRowCount; ++row)
-            {
-                res[ind++] = mWeightMatrix[row * mColCount + col];
-            }
-        }
-        return Weights(std::move(res), mColCount, mRowCount);
-    }
+public:
+    ANN(std::size_t inputSize, std::size_t outputSize,
+        std::size_t hiddenSize, std::size_t hiddenCount,
+        float biasLowest = -1.0f, float biasHighest = 1.0f);
 
-    ////////////////////////////////////////
-    struct ANN
-    {
-    private:
-        Layer mInputLayer;
-        std::vector<Layer> mHiddenLayers;
-        Layer mOutputLayer;
+    void SetInput(const float* neurons, std::size_t neuronCount) { mInputLayer.SetNeurons(neurons, neuronCount); }
+    void SetInput(std::vector<float>&& inputValues) { mInputLayer.SetNeurons(std::move(inputValues)); }
+    std::vector<float> GetOutput() const { return mOutputLayer.GetNeurons(); }
 
-        std::vector<Weights> mWeights;
-        std::vector<float> mBiases;
+    void ResetBiases(float biasesLowest, float biasesHighest);
 
-        std::size_t mParameterCount;
+    void ForwardPass(std::function<float(float)> activationFunction);
 
-    public:
-        ANN(std::size_t inputSize, std::size_t outputSize,
-            std::size_t hiddenSize, std::size_t hiddenCount,
-            float biasLowest = 0.0f, float biasHighest = 1.0f);
+    std::size_t GetParameterCount() const { return mParameterCount; }
+};
 
-        void SetInput(std::vector<float>&& inputValues) { mInputLayer.SetNeurons(std::move(inputValues)); }
-        std::vector<float> GetOutput() const { return mOutputLayer.GetNeurons(); }
+////////////////////////////////////////
+void ANN::ResetBiases(float biasLowest, float biasHighest)
+{
+    std::random_device rd;
+    std::uniform_real_distribution dist(biasLowest, biasHighest);
+    std::ranges::for_each(mBiases, [&](auto& x){ x = dist(rd); });
+}
 
-        void ResetBiases(float biasesLowest, float biasesHighest);
-
-        void ForwardPass(std::function<float(float)> activationFunction);
-
-        std::size_t GetParameterCount() const { return mParameterCount; }
-    };
-
-    ////////////////////////////////////////
-    void ANN::ResetBiases(float biasLowest, float biasHighest)
-    {
-        std::random_device rd;
-        std::uniform_real_distribution dist(biasLowest, biasHighest);
-        std::ranges::for_each(mBiases, [&](auto& x){ x = dist(rd); });
-    }
-
-    ////////////////////////////////////////
-    ANN::ANN(std::size_t inputSize, std::size_t outputSize,
-             std::size_t hiddenSize, std::size_t hiddenCount,
-             float biasLowest, float biasHighest)
-        : mInputLayer(inputSize), mOutputLayer(outputSize),
-          mBiases(hiddenCount + 1)
-    {
+////////////////////////////////////////
+ANN::ANN(std::size_t inputSize, std::size_t outputSize,
+         std::size_t hiddenSize, std::size_t hiddenCount,
+         float biasLowest, float biasHighest)
+    : mInputLayer(inputSize), mOutputLayer(outputSize),
+      mBiases(hiddenCount + 1), mParameterCount{}
+{
 #ifdef _DEBUG
-        std::printf("Initializing ANN at %p with %lu input neurons, %lu output neurons, %lu hidden layers each with %lu neurons, and %lu bias values\n",
-                    reinterpret_cast<void*>(this), inputSize, outputSize, hiddenCount, hiddenSize, mBiases.size());
+    std::printf("Initializing ANN at %p with %lu input neurons, %lu output neurons, %lu hidden layers each with %lu neurons, and %lu bias values\n",
+                reinterpret_cast<void*>(this), inputSize, outputSize, hiddenCount, hiddenSize, mBiases.size());
 #endif
 
-        ResetBiases(biasLowest, biasHighest);
+    ResetBiases(biasLowest, biasHighest);
 
-        for (std::size_t i = 0; i < hiddenCount; ++i)
+    for (std::size_t i = 0; i < hiddenCount; ++i)
+    {
+        mHiddenLayers.push_back(Layer(hiddenSize));
+    }
+
+    if (hiddenCount == 0)
+    {
+        mWeights.push_back(Weights(mInputLayer, mOutputLayer));
+    }
+    else
+    {
+        mWeights.push_back(Weights(mInputLayer, mHiddenLayers[0]));
+        for (std::size_t i = 1; i < hiddenCount; ++i)
         {
-            mHiddenLayers.push_back(Layer(hiddenSize));
+            mWeights.push_back(Weights(mHiddenLayers[i - 1], mHiddenLayers[i]));
+        }
+        mWeights.push_back(Weights(mHiddenLayers[hiddenCount - 1], mOutputLayer));
+    }
+
+    std::ranges::for_each(mWeights, [&](const auto& weights){ mParameterCount += weights.GetSize(); });
+    mParameterCount += mBiases.size();
+
+#ifdef _DEBUG
+    std::printf("ANN at %p is initialized with %lu parameters\n", reinterpret_cast<void*>(this), mParameterCount);
+#endif
+}
+
+////////////////////////////////////////
+void ANN::ForwardPass(std::function<float(float)> activationFunction)
+{
+    assert(mBiases.size() == mHiddenLayers.size() + 1);
+
+    if (mHiddenLayers.size() == 0)
+    {
+        assert(mWeights.size() == 1);
+
+        mOutputLayer = mWeights[0].Dot(mInputLayer);
+        mOutputLayer.AddScalar(mBiases[0]);
+        mOutputLayer.ApplyActivation(activationFunction);
+    }
+    else
+    {
+        assert(mWeights.size() == mHiddenLayers.size() + 1);
+
+        mHiddenLayers[0] = mWeights[0].Dot(mInputLayer);
+        mHiddenLayers[0].AddScalar(mBiases[0]);
+        mHiddenLayers[0].ApplyActivation(activationFunction);
+
+        for (std::size_t i = 1; i < mHiddenLayers.size(); ++i)
+        {
+            mHiddenLayers[i] = mWeights[i].Dot(mHiddenLayers[i - 1]);
+            mHiddenLayers[i].AddScalar(mBiases[i]);
+            mHiddenLayers[i].ApplyActivation(activationFunction);
         }
 
-        if (hiddenCount == 0)
+        mOutputLayer = mWeights[mWeights.size() - 1].Dot(mHiddenLayers[mHiddenLayers.size() - 1]);
+        mOutputLayer.AddScalar(mBiases[mBiases.size() - 1]);
+        mOutputLayer.ApplyActivation(activationFunction);
+    }
+}
+
+////////////////////////////////////////
+static float Sigmoid(float x)
+{
+    return 1.0f / (1.0f + std::exp(-x));
+}
+
+#if 0
+////////////////////////////////////////
+static float ReLU(float x)
+{
+    return std::max(x, 0.0f);
+}
+#endif
+
+////////////////////////////////////////
+enum class DatumType
+{
+    TrainNormal,
+    TrainBacteria,
+    TrainVirus,
+
+    TestNormal,
+    TestBacteria,
+    TestVirus
+};
+
+////////////////////////////////////////
+struct DataLoader
+{
+private:
+    std::vector<float*> mTrainNormalImages;
+    std::vector<float*> mTrainBacteriaImages;
+    std::vector<float*> mTrainVirusImages;
+
+    std::vector<float*> mTestNormalImages;
+    std::vector<float*> mTestBacteriaImages;
+    std::vector<float*> mTestVirusImages;
+
+    std::string mDirPath;
+
+    int mWidth, mHeight;
+    std::size_t mTotalBytesLoaded;
+
+    float* GetXImage(std::size_t i, const std::vector<float*>& imageBuffer) const
+    {
+        assert(i < imageBuffer.size());
+        return imageBuffer[i];
+    }
+
+    void AddToBuffer(const std::string& entryPathStr,
+                     float* data,
+                     std::vector<float*>& normalImageBuffer,
+                     std::vector<float*>& bacteriaImageBuffer,
+                     std::vector<float*>& virusImageBuffer);
+
+public:
+    explicit DataLoader(const std::string& dirPath);
+
+    ~DataLoader();
+
+    DataLoader(const DataLoader&) = delete;
+    DataLoader& operator=(const DataLoader&) = delete;
+
+    DataLoader(DataLoader&&) = default;
+    DataLoader& operator=(DataLoader&&) = default;
+
+    std::string GetDirPath() const { return mDirPath; }
+    std::size_t GetTotalBytesLoaded() const { return mTotalBytesLoaded; }
+
+    std::size_t GetImageCount(DatumType type) const
+    {
+        switch (type)
         {
-            mWeights.push_back(Weights(mInputLayer, mOutputLayer));
+            case DatumType::TrainNormal:
+                return mTrainNormalImages.size();
+            case DatumType::TrainBacteria:
+                return mTrainBacteriaImages.size();
+            case DatumType::TrainVirus:
+                return mTrainVirusImages.size();
+            case DatumType::TestNormal:
+                return mTestNormalImages.size();
+            case DatumType::TestBacteria:
+                return mTestBacteriaImages.size();
+            case DatumType::TestVirus:
+                return mTestVirusImages.size();
         }
-        else
+    }
+
+    const float* GetImage(DatumType type, std::size_t i) const
+    {
+        switch (type)
         {
-            mWeights.push_back(Weights(mInputLayer, mHiddenLayers[0]));
-            for (std::size_t i = 1; i < hiddenCount; ++i)
+            case DatumType::TrainNormal:
+                return GetXImage(i, mTrainNormalImages);
+            case DatumType::TrainBacteria:
+                return GetXImage(i, mTrainBacteriaImages);
+            case DatumType::TrainVirus:
+                return GetXImage(i, mTrainVirusImages);
+            case DatumType::TestNormal:
+                return GetXImage(i, mTestNormalImages);
+            case DatumType::TestBacteria:
+                return GetXImage(i, mTestBacteriaImages);
+            case DatumType::TestVirus:
+                return GetXImage(i, mTestVirusImages);
+        }
+    }
+
+    int GetWidth() const { return mWidth; }
+    int GetHeight() const { return mHeight; }
+    int GetSize() const { return mWidth * mHeight; }
+};
+
+////////////////////////////////////////
+void DataLoader::AddToBuffer(const std::string& entryPathStr,
+                             float* data,
+                             std::vector<float*>& normalImageBuffer,
+                             std::vector<float*>& bacteriaImageBuffer,
+                             std::vector<float*>& virusImageBuffer)
+{
+    if (entryPathStr.find("normal") != std::string::npos)
+    {
+        normalImageBuffer.push_back(data);
+    }
+    else if (entryPathStr.find("bacteria") != std::string::npos)
+    {
+        bacteriaImageBuffer.push_back(data);
+    }
+    else if (entryPathStr.find("virus") != std::string::npos)
+    {
+        virusImageBuffer.push_back(data);
+    }
+}
+
+////////////////////////////////////////
+DataLoader::~DataLoader()
+{
+    std::ranges::for_each(mTrainNormalImages, [](auto& data){ std::free(data); });
+    std::ranges::for_each(mTrainBacteriaImages, [](auto& data){ std::free(data); });
+    std::ranges::for_each(mTrainVirusImages, [](auto& data){ std::free(data); });
+
+    std::ranges::for_each(mTestNormalImages, [](auto& data){ std::free(data); });
+    std::ranges::for_each(mTestBacteriaImages, [](auto& data){ std::free(data); });
+    std::ranges::for_each(mTestVirusImages, [](auto& data){ std::free(data); });
+}
+
+////////////////////////////////////////
+DataLoader::DataLoader(const std::string& dirPath)
+    : mDirPath{dirPath}, mWidth{}, mHeight{}, mTotalBytesLoaded{}
+{
+    const std::filesystem::path dataPath{ dirPath };
+    if (!std::filesystem::is_directory(dataPath))
+    {
+        std::fprintf(stderr, "ERROR: %s is not a directory\n", dirPath.c_str());
+        std::exit(EXIT_FAILURE);
+    }
+
+#ifdef _DEBUG
+    std::printf("DataLoader at %p has started to load data from disk...\n", reinterpret_cast<void*>(this));
+#endif
+
+    for (const auto& entry : std::filesystem::directory_iterator(dataPath))
+    {
+        if (std::filesystem::is_regular_file(entry) && !std::filesystem::is_empty(entry) && entry.path().extension() == ".png")
+        {
+            std::string entryPathStr = entry.path().string();
+            int width, height, channelCount;
+            stbi_uc* data = stbi_load(entryPathStr.c_str(), &width, &height, &channelCount, 0);
+            if (!data)
             {
-                mWeights.push_back(Weights(mHiddenLayers[i - 1], mHiddenLayers[i]));
+                std::fprintf(stderr, "ERROR: failed to load %s\n", entryPathStr.c_str());
+                std::exit(EXIT_FAILURE);
             }
-            mWeights.push_back(Weights(mHiddenLayers[hiddenCount - 1], mOutputLayer));
-        }
-
-        std::ranges::for_each(mWeights, [&](const auto& weights){ mParameterCount += weights.GetSize(); });
-        mParameterCount += mBiases.size();
-
-#ifdef _DEBUG
-        std::printf("ANN at %p is initialized with %lu parameters\n", reinterpret_cast<void*>(this), mParameterCount);
-#endif
-    }
-
-    ////////////////////////////////////////
-    void ANN::ForwardPass(std::function<float(float)> activationFunction)
-    {
-#ifdef _DEBUG
-        std::printf("ANN at %p is starting forward pass\n", reinterpret_cast<void*>(this));
-#endif
-
-        assert(mBiases.size() == mHiddenLayers.size() + 1);
-
-        if (mHiddenLayers.size() == 0)
-        {
-            assert(mWeights.size() == 1);
-
-            mOutputLayer = mWeights[0].Dot(mInputLayer);
-            mOutputLayer.AddScalar(mBiases[0]);
-            mOutputLayer.ApplyActivation(activationFunction);
-        }
-        else
-        {
-            assert(mWeights.size() == mHiddenLayers.size() + 1);
-
-            mHiddenLayers[0] = mWeights[0].Dot(mInputLayer);
-            mHiddenLayers[0].AddScalar(mBiases[0]);
-            mHiddenLayers[0].ApplyActivation(activationFunction);
-
-            for (std::size_t i = 1; i < mHiddenLayers.size(); ++i)
+            if (0 == mWidth && 0 == mHeight)
             {
-                mHiddenLayers[i] = mWeights[i].Dot(mHiddenLayers[i - 1]);
-                mHiddenLayers[i].AddScalar(mBiases[i]);
-                mHiddenLayers[i].ApplyActivation(activationFunction);
+                mWidth = width;
+                mHeight = height;
+            }
+            assert(width == height && mWidth == width && mHeight == height);
+
+            float* floatData = static_cast<float*>(std::malloc(static_cast<std::size_t>(width * height) * sizeof(float)));
+            if (!floatData)
+            {
+                std::fprintf(stderr, "ERROR: not enough memory for image buffer\n");
+                std::exit(EXIT_FAILURE);
             }
 
-            mOutputLayer = mWeights[mWeights.size() - 1].Dot(mHiddenLayers[mHiddenLayers.size() - 1]);
-            mOutputLayer.AddScalar(mBiases[mBiases.size() - 1]);
-            mOutputLayer.ApplyActivation(activationFunction);
+            for (std::size_t i = 0; i < static_cast<std::size_t>(width * height); ++i)
+            {
+                floatData[i] = static_cast<float>(data[i]) / 255.0f;
+            }
+            stbi_image_free(data);
+            mTotalBytesLoaded += static_cast<std::size_t>(width * height) * sizeof(float);
+
+            if (entryPathStr.find("train") != std::string::npos)
+            {
+                AddToBuffer(entryPathStr, floatData, mTrainNormalImages, mTrainBacteriaImages, mTrainVirusImages);
+            }
+            else if (entryPathStr.find("test") != std::string::npos)
+            {
+                AddToBuffer(entryPathStr, floatData, mTestNormalImages, mTestBacteriaImages, mTestVirusImages);
+            }
         }
+    }
 
 #ifdef _DEBUG
-        std::printf("ANN at %p has ended forward pass\n", reinterpret_cast<void*>(this));
+    std::printf("DataLoader at %p has loaded %lu training images and %lu testing images\n", reinterpret_cast<void*>(this),
+                                                                                            mTrainNormalImages.size() + mTrainBacteriaImages.size() + mTrainVirusImages.size(),
+                                                                                            mTestNormalImages.size() + mTestBacteriaImages.size() + mTestVirusImages.size());
+    std::printf("DataLoader at %p currently holds %lu bytes in memory\n", reinterpret_cast<void*>(this), mTotalBytesLoaded);
+    std::printf("\n= = = = = = = = = = = = = = = = = = STATS = = = = = = = = = = = = = = = = = =\n");
+    std::printf("[Training]\t[Normal]\t%lu\t[Bacteria]\t%lu\t[Virus]\t%lu\n", mTrainNormalImages.size(),
+                                                                                                      mTrainBacteriaImages.size(),
+                                                                                                      mTrainVirusImages.size());
+    std::printf("[Testing]\t[Normal]\t%lu\t[Bacteria]\t%lu\t[Virus]\t%lu\n", mTestNormalImages.size(),
+                                                                                                   mTestBacteriaImages.size(),
+                                                                                                   mTestVirusImages.size());
+    std::printf("= = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =\n\n");
 #endif
-    }
+}
 
-    ////////////////////////////////////////
-    static float Sigmoid(float x)
-    {
-        return 1.0f / (1.0f + std::exp(-x));
-    }
+////////////////////////////////////////
+int main(int argc, char** argv)
+{
+    DataLoader dataLoader("PneumoniaData");
 
-    ////////////////////////////////////////
-    static float ReLU(float x)
-    {
-        return std::max(x, 0.0f);
-    }
+    constexpr std::size_t inputNeuronCount{ 32 * 32 };
+    constexpr std::size_t outputNeuronCount{ 3 };
+    constexpr std::size_t hiddenLayerNeuronCount{ 30 };
+    constexpr std::size_t hiddenLayerCount{ 5 };
 
-    ////////////////////////////////////////
-    int main(int argc, char** argv)
-    {
-        constexpr std::size_t inputNeuronCount{ 16 * 16 };
-        constexpr std::size_t outputNeuronCount{ 3 };
-        constexpr std::size_t hiddenLayerNeuronCount{ 30 };
-        constexpr std::size_t hiddenLayerCount{ 5 };
+    ANN ann(inputNeuronCount,
+            outputNeuronCount,
+            hiddenLayerNeuronCount,
+            hiddenLayerCount);
 
-        ANN ann(inputNeuronCount,
-                outputNeuronCount,
-                hiddenLayerNeuronCount,
-                hiddenLayerCount);
+    ann.ForwardPass(Sigmoid);
 
-        ann.ForwardPass(Sigmoid);
+    std::ranges::for_each(ann.GetOutput(), [](auto x){ std::printf("%.4f\t", x); });
+    std::putchar('\n');
 
-        std::ranges::for_each(ann.GetOutput(), [](auto x){ std::printf("%.4f\t", x); });
-        std::putchar('\n');
-
-        return 0;
-    }
+    return 0;
+}

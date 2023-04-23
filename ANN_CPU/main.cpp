@@ -44,7 +44,7 @@ public:
     void ApplyActivation(std::function<float(float)> activation) { std::ranges::for_each(mNeurons, [&](auto& x){ x = activation(x); }); }
 
     void SetNeurons(std::vector<float>&& neurons);
-    void SetNeurons(const float* neurons, std::size_t size);
+    void SetNeurons(float* neurons, std::size_t size);
 
     std::vector<float> GetNeurons() const { return mNeurons; }
 
@@ -61,7 +61,7 @@ void Layer::SetNeurons(std::vector<float>&& neurons)
 }
 
 ////////////////////////////////////////
-void Layer::SetNeurons(const float* neurons, std::size_t size)
+void Layer::SetNeurons(float* neurons, std::size_t size)
 {
     assert(mNeurons.size() == size);
     for (std::size_t i = 0; i < size; ++i)
@@ -184,7 +184,7 @@ public:
         std::size_t hiddenSize, std::size_t hiddenCount,
         float biasLowest = -1.0f, float biasHighest = 1.0f);
 
-    void SetInput(const float* neurons, std::size_t neuronCount) { mInputLayer.SetNeurons(neurons, neuronCount); }
+    void SetInput(float* neurons, std::size_t neuronCount) { mInputLayer.SetNeurons(neurons, neuronCount); }
     void SetInput(std::vector<float>&& inputValues) { mInputLayer.SetNeurons(std::move(inputValues)); }
     std::vector<float> GetOutput() const { return mOutputLayer.GetNeurons(); }
 
@@ -305,6 +305,39 @@ enum class DatumType
 };
 
 ////////////////////////////////////////
+static std::vector<float> ComputeCorrectOutput(DatumType type)
+{
+    switch (type)
+    {
+        case DatumType::TrainNormal:
+        case DatumType::TestNormal:
+            return { 1.0f, 0.0f, 0.0f };
+        case DatumType::TrainBacteria:
+        case DatumType::TestBacteria:
+            return { 0.0f, 1.0f, 0.0f };
+        case DatumType::TrainVirus:
+        case DatumType::TestVirus:
+            return { 0.0f, 0.0f, 1.0f };
+        default:
+            std::fprintf(stderr, "ERROR: invalid DatumType\n");
+            return { 0.0f, 0.0f, 0.0f };
+    }
+}
+
+////////////////////////////////////////
+static float ComputeDistance(const std::vector<float>& p, const std::vector<float>& q)
+{
+    assert(p.size() == q.size());
+
+    float len{};
+    for (std::size_t i = 0; i < p.size(); ++i)
+    {
+        len += std::pow(p[i] - q[i], 2.0f);
+    }
+    return std::sqrt(len);
+}
+
+////////////////////////////////////////
 struct DataLoader
 {
 private:
@@ -366,7 +399,7 @@ public:
         }
     }
 
-    const float* GetImage(DatumType type, std::size_t i) const
+    float* GetImage(DatumType type, std::size_t i) const
     {
         switch (type)
         {
@@ -382,12 +415,32 @@ public:
                 return GetXImage(i, mTestBacteriaImages);
             case DatumType::TestVirus:
                 return GetXImage(i, mTestVirusImages);
+            default:
+                std::fprintf(stderr, "ERROR: invalid DatumType\n");
+                return nullptr;
         }
     }
 
     int GetWidth() const { return mWidth; }
     int GetHeight() const { return mHeight; }
-    int GetSize() const { return mWidth * mHeight; }
+    std::size_t GetSize() const { return static_cast<std::size_t>(mWidth * mHeight); }
+    std::size_t GetCategoryCount() const { return 3; }
+
+    std::size_t GetTrainNormalCount() const { return mTrainNormalImages.size(); }
+    std::size_t GetTrainBacteriaCount() const { return mTrainBacteriaImages.size(); }
+    std::size_t GetTrainVirusCount() const { return mTrainVirusImages.size(); }
+
+    std::size_t GetTestNormalCount() const { return mTestNormalImages.size(); }
+    std::size_t GetTestBacteriaCount() const { return mTestBacteriaImages.size(); }
+    std::size_t GetTestVirusCount() const { return mTestVirusImages.size(); }
+
+    std::size_t GetTrainTotalCount() const { return GetTrainNormalCount() +
+                                                    GetTrainBacteriaCount() +
+                                                    GetTrainVirusCount(); }
+
+    std::size_t GetTestTotalCount() const { return GetTestNormalCount() +
+                                                   GetTestBacteriaCount() +
+                                                   GetTestVirusCount(); }
 };
 
 ////////////////////////////////////////
@@ -499,24 +552,59 @@ DataLoader::DataLoader(const std::string& dirPath)
 }
 
 ////////////////////////////////////////
+static float TestANN(ANN& ann, const DataLoader& dataLoader)
+{
+    float error{};
+
+    // normal
+    for (std::size_t i = 0; i < dataLoader.GetTestNormalCount(); ++i)
+    {
+        ann.SetInput(dataLoader.GetImage(DatumType::TestNormal, i), dataLoader.GetSize());
+        ann.ForwardPass(Sigmoid);
+
+        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestNormal);
+        std::vector<float> actualOutput = ann.GetOutput();
+        error += ComputeDistance(expectedOutput, actualOutput);
+    }
+
+    // bacteria
+    for (std::size_t i = 0; i < dataLoader.GetTestBacteriaCount(); ++i)
+    {
+        ann.SetInput(dataLoader.GetImage(DatumType::TestBacteria, i), dataLoader.GetSize());
+        ann.ForwardPass(Sigmoid);
+
+        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestBacteria);
+        std::vector<float> actualOutput = ann.GetOutput();
+        error += ComputeDistance(expectedOutput, actualOutput);
+    }
+
+    // virus
+    for (std::size_t i = 0; i < dataLoader.GetTestVirusCount(); ++i)
+    {
+        ann.SetInput(dataLoader.GetImage(DatumType::TestVirus, i), dataLoader.GetSize());
+        ann.ForwardPass(Sigmoid);
+
+        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestVirus);
+        std::vector<float> actualOutput = ann.GetOutput();
+        error += ComputeDistance(expectedOutput, actualOutput);
+    }
+    return error;
+}
+
+////////////////////////////////////////
 int main(int argc, char** argv)
 {
     DataLoader dataLoader("PneumoniaData");
 
-    constexpr std::size_t inputNeuronCount{ 32 * 32 };
-    constexpr std::size_t outputNeuronCount{ 3 };
-    constexpr std::size_t hiddenLayerNeuronCount{ 30 };
-    constexpr std::size_t hiddenLayerCount{ 5 };
+    const std::size_t inputNeuronCount{ dataLoader.GetSize() };
+    const std::size_t outputNeuronCount{ dataLoader.GetCategoryCount() };
+    const std::size_t hiddenLayerNeuronCount{ 30 };
+    const std::size_t hiddenLayerCount{ 5 };
 
-    ANN ann(inputNeuronCount,
-            outputNeuronCount,
-            hiddenLayerNeuronCount,
-            hiddenLayerCount);
+    ANN ann(inputNeuronCount, outputNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 
-    ann.ForwardPass(Sigmoid);
-
-    std::ranges::for_each(ann.GetOutput(), [](auto x){ std::printf("%.4f\t", x); });
-    std::putchar('\n');
+    float error = TestANN(ann, dataLoader);
+    std::printf("ANN Error Rate: %.4f\n", error);
 
     return 0;
 }

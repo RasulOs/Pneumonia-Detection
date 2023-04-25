@@ -285,6 +285,12 @@ static float Sigmoid(float x)
 }
 
 ////////////////////////////////////////
+static float SigmoidDerivative(float x)
+{
+    return Sigmoid(x) * (1.0f - Sigmoid(x));
+}
+
+////////////////////////////////////////
 static float ReLU(float x)
 {
     return std::max(x, 0.0f);
@@ -596,8 +602,8 @@ int main(int argc, char** argv)
 
     const std::size_t inputNeuronCount{ dataLoader.GetSize() };
     const std::size_t outputNeuronCount{ dataLoader.GetCategoryCount() };
-    const std::size_t hiddenLayerNeuronCount{ 30 };
-    const std::size_t hiddenLayerCount{ 5 };
+    const std::size_t hiddenLayerNeuronCount{ 50 };
+    const std::size_t hiddenLayerCount{ 3 };
 
     ANN ann(inputNeuronCount, outputNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 

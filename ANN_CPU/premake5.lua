@@ -7,10 +7,12 @@ workspace "ann_cpu"
 project "stb_image"
     kind "StaticLib"
     language "C"
-    location "build/stb_image"
-    targetdir "build/%{cfg.buildcfg}"
+    location "../ThirdParty/build/stb_image"
+    targetdir "../ThirdParty/build/%{cfg.buildcfg}"
 
-    files { "stb_image.c" }
+    includedirs { "../ThirdParty" }
+
+    files { "../ThirdParty/stb_image.c" }
 
     filter "configurations:Debug"
         defines { "_DEBUG", "DEBUG" }
@@ -25,6 +27,8 @@ project "ann_cpu"
     language "C++"
     location "build/ann_cpu"
     targetdir "build/%{cfg.buildcfg}"
+
+    includedirs { "../ThirdParty" }
 
     files { "main.cpp" }
 

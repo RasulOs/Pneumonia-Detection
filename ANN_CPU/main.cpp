@@ -35,6 +35,7 @@ private:
     std::vector<float> mNeurons;
 
 public:
+    Layer() {}
     explicit Layer(std::size_t neuronCount) : mNeurons(neuronCount) {}
     Layer(float* values, std::size_t valueCount);
     Layer(std::vector<float>&& values) : mNeurons{std::move(values)} {}
@@ -99,15 +100,13 @@ public:
 
     void Print() const;
     Layer Dot(const Layer& layer) const;
+    Layer Dot(const std::vector<float>& v) const;
     Weights Transpose() const;
 
     std::size_t GetSize() const { return mRowCount * mColCount; }
     std::size_t GetRowCount() const { return mRowCount; }
     std::size_t GetColCount() const { return mColCount; }
 };
-
-////////////////////////////////////////
-using Errors = Weights;
 
 ////////////////////////////////////////
 Weights::Weights(const Layer& layerA, const Layer& layerB,
@@ -151,6 +150,21 @@ Layer Weights::Dot(const Layer& layer) const
 }
 
 ////////////////////////////////////////
+Layer Weights::Dot(const std::vector<float>& v) const
+{
+    assert(v.size() == mColCount);
+
+    std::vector<float> newVec(mRowCount);
+    for (std::size_t i = 0; i < mRowCount; ++i)
+    {
+        auto weightBegin = mWeightMatrix.begin() + static_cast<std::int32_t>(i * mColCount);
+        auto weightEnd = weightBegin + static_cast<std::int32_t>(mColCount);
+        newVec[i] = std::transform_reduce(weightBegin, weightEnd, v.begin(), 0.0f);
+    }
+    return Layer(std::move(newVec));
+}
+
+////////////////////////////////////////
 Weights Weights::Transpose() const
 {
     std::vector<float> res(mRowCount * mColCount);
@@ -191,6 +205,7 @@ public:
     void ResetBiases(float biasesLowest, float biasesHighest);
 
     void ForwardPass(std::function<float(float)> activationFunction);
+    void BackwardPass(std::vector<float>&& errorFromOutput);
 
     std::size_t GetParameterCount() const { return mParameterCount; }
 };
@@ -275,6 +290,23 @@ void ANN::ForwardPass(std::function<float(float)> activationFunction)
         mOutputLayer = mWeights[mWeights.size() - 1].Dot(mHiddenLayers[mHiddenLayers.size() - 1]);
         mOutputLayer.AddScalar(mBiases[mBiases.size() - 1]);
         mOutputLayer.ApplyActivation(activationFunction);
+    }
+}
+
+////////////////////////////////////////
+using Errors = Layer;
+
+////////////////////////////////////////
+void ANN::BackwardPass(std::vector<float>&& errorFromOutput)
+{
+    assert(errorFromOutput.size() == mOutputLayer.GetNeuronCount());
+
+    Errors prevErrors(std::move(errorFromOutput));
+    for (std::size_t i = mWeights.size() - 1; i != std::numeric_limits<std::size_t>::max(); --i)
+    {
+        Errors errors = mWeights[i].Transpose().Dot(prevErrors);
+        // Fix mWeights[i]
+        prevErrors = std::move(errors);
     }
 }
 

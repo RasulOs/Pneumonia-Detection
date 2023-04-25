@@ -284,13 +284,17 @@ static float Sigmoid(float x)
     return 1.0f / (1.0f + std::exp(-x));
 }
 
-#if 0
+////////////////////////////////////////
+static float SigmoidDerivative(float x)
+{
+    return Sigmoid(x) * (1.0f - Sigmoid(x));
+}
+
 ////////////////////////////////////////
 static float ReLU(float x)
 {
     return std::max(x, 0.0f);
 }
-#endif
 
 ////////////////////////////////////////
 enum class DatumType
@@ -552,7 +556,7 @@ DataLoader::DataLoader(const std::string& dirPath)
 }
 
 ////////////////////////////////////////
-static float TestANN(ANN& ann, const DataLoader& dataLoader)
+static float TestANN(ANN& ann, const DataLoader& dataLoader, std::function<float(float)> activationFunction)
 {
     float error{};
 
@@ -560,7 +564,7 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader)
     for (std::size_t i = 0; i < dataLoader.GetTestNormalCount(); ++i)
     {
         ann.SetInput(dataLoader.GetImage(DatumType::TestNormal, i), dataLoader.GetSize());
-        ann.ForwardPass(Sigmoid);
+        ann.ForwardPass(activationFunction);
 
         std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestNormal);
         std::vector<float> actualOutput = ann.GetOutput();
@@ -571,7 +575,7 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader)
     for (std::size_t i = 0; i < dataLoader.GetTestBacteriaCount(); ++i)
     {
         ann.SetInput(dataLoader.GetImage(DatumType::TestBacteria, i), dataLoader.GetSize());
-        ann.ForwardPass(Sigmoid);
+        ann.ForwardPass(activationFunction);
 
         std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestBacteria);
         std::vector<float> actualOutput = ann.GetOutput();
@@ -582,7 +586,7 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader)
     for (std::size_t i = 0; i < dataLoader.GetTestVirusCount(); ++i)
     {
         ann.SetInput(dataLoader.GetImage(DatumType::TestVirus, i), dataLoader.GetSize());
-        ann.ForwardPass(Sigmoid);
+        ann.ForwardPass(activationFunction);
 
         std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestVirus);
         std::vector<float> actualOutput = ann.GetOutput();
@@ -598,12 +602,12 @@ int main(int argc, char** argv)
 
     const std::size_t inputNeuronCount{ dataLoader.GetSize() };
     const std::size_t outputNeuronCount{ dataLoader.GetCategoryCount() };
-    const std::size_t hiddenLayerNeuronCount{ 30 };
-    const std::size_t hiddenLayerCount{ 5 };
+    const std::size_t hiddenLayerNeuronCount{ 50 };
+    const std::size_t hiddenLayerCount{ 3 };
 
     ANN ann(inputNeuronCount, outputNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 
-    float error = TestANN(ann, dataLoader);
+    float error = TestANN(ann, dataLoader, Sigmoid);
     std::printf("ANN Error Rate: %.4f\n", error);
 
     return 0;

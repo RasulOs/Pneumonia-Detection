@@ -7,10 +7,12 @@ workspace "preprocessor"
 project "stb_image"
     kind "StaticLib"
     language "C"
-    location "build/stb_image"
-    targetdir "build/%{cfg.buildcfg}"
+    location "../ThirdParty/build/stb_image"
+    targetdir "../ThirdParty/build/%{cfg.buildcfg}"
 
-    files { "stb_image.c" }
+    includedirs { "../ThirdParty" }
+
+    files { "../ThirdParty/stb_image.c" }
 
     filter "configurations:Debug"
         defines { "_DEBUG", "DEBUG" }
@@ -23,10 +25,12 @@ project "stb_image"
 project "stb_image_resize"
     kind "StaticLib"
     language "C"
-    location "build/stb_image_resize"
-    targetdir "build/%{cfg.buildcfg}"
+    location "../ThirdParty/build/stb_image_resize"
+    targetdir "../ThirdParty/build/%{cfg.buildcfg}"
 
-    files { "stb_image_resize.c" }
+    includedirs { "../ThirdParty" }
+
+    files { "../ThirdParty/stb_image_resize.c" }
 
     filter "configurations:Debug"
         defines { "_DEBUG", "DEBUG" }
@@ -39,10 +43,12 @@ project "stb_image_resize"
 project "stb_image_write"
     kind "StaticLib"
     language "C"
-    location "build/stb_image_write"
-    targetdir "build/%{cfg.buildcfg}"
+    location "../ThirdParty/build/stb_image_write"
+    targetdir "../ThirdParty/build/%{cfg.buildcfg}"
 
-    files { "stb_image_write.c" }
+    includedirs { "../ThirdParty" }
+
+    files { "../ThirdParty/stb_image_write.c" }
 
     filter "configurations:Debug"
         defines { "_DEBUG", "DEBUG" }
@@ -57,6 +63,8 @@ project "preprocessor"
     language "C++"
     location "build/preprocessor"
     targetdir "build/%{cfg.buildcfg}"
+
+    includedirs { "../ThirdParty" }
 
     files { "preprocessor.cpp" }
 

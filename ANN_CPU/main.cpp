@@ -29,6 +29,31 @@
 #include <filesystem>
 
 ////////////////////////////////////////
+static float ComputeDistance(const std::vector<float>& p, const std::vector<float>& q)
+{
+    assert(p.size() == q.size());
+
+    float len{};
+    for (std::size_t i = 0; i < p.size(); ++i)
+    {
+        len += std::pow(p[i] - q[i], 2.0f);
+    }
+    return std::sqrt(len);
+}
+
+////////////////////////////////////////
+static std::vector<float> operator*(const std::vector<float>& v1, const std::vector<float>& v2)
+{
+    assert(v1.size() == v2.size());
+    std::vector<float> res(v1.size());
+    for (std::size_t i = 0; i < v1.size(); ++i)
+    {
+        res[i] = v1[i] * v2[i];
+    }
+    return res;
+}
+
+////////////////////////////////////////
 struct Layer
 {
 private:
@@ -90,6 +115,10 @@ private:
     std::vector<float> mWeightMatrix;
 
 public:
+    Weights(std::size_t rowCount, std::size_t colCount)
+        : mRowCount{rowCount}, mColCount{colCount},
+          mWeightMatrix(rowCount * colCount) {}
+
     Weights(const Layer& layerA, const Layer& layerB,
             float lowest = -1.0f, float highest = 1.0f);
 
@@ -106,6 +135,18 @@ public:
     std::size_t GetSize() const { return mRowCount * mColCount; }
     std::size_t GetRowCount() const { return mRowCount; }
     std::size_t GetColCount() const { return mColCount; }
+
+    float& operator[](std::size_t i)
+    {
+        assert(i < mWeightMatrix.size());
+        return mWeightMatrix[i];
+    }
+
+    const float& operator[](std::size_t i) const
+    {
+        assert(i < mWeightMatrix.size());
+        return mWeightMatrix[i];
+    }
 };
 
 ////////////////////////////////////////
@@ -205,7 +246,7 @@ public:
     void ResetBiases(float biasesLowest, float biasesHighest);
 
     void ForwardPass(std::function<float(float)> activationFunction);
-    void BackwardPass(std::vector<float>&& errorFromOutput);
+    void BackwardPass(std::vector<float>&& errorFromOutput, float learningRate);
 
     std::size_t GetParameterCount() const { return mParameterCount; }
 };
@@ -297,13 +338,15 @@ void ANN::ForwardPass(std::function<float(float)> activationFunction)
 using Errors = Layer;
 
 ////////////////////////////////////////
-void ANN::BackwardPass(std::vector<float>&& errorFromOutput)
+void ANN::BackwardPass(std::vector<float>&& errorFromOutput, float learningRate)
 {
     assert(errorFromOutput.size() == mOutputLayer.GetNeuronCount());
 
     Errors prevErrors(std::move(errorFromOutput));
     for (std::size_t i = mWeights.size() - 1; i != std::numeric_limits<std::size_t>::max(); --i)
     {
+        // std::vector<float> gradient = 
+
         Errors errors = mWeights[i].Transpose().Dot(prevErrors);
         // Fix mWeights[i]
         prevErrors = std::move(errors);
@@ -358,19 +401,6 @@ static std::vector<float> ComputeCorrectOutput(DatumType type)
             std::fprintf(stderr, "ERROR: invalid DatumType\n");
             return { 0.0f, 0.0f, 0.0f };
     }
-}
-
-////////////////////////////////////////
-static float ComputeDistance(const std::vector<float>& p, const std::vector<float>& q)
-{
-    assert(p.size() == q.size());
-
-    float len{};
-    for (std::size_t i = 0; i < p.size(); ++i)
-    {
-        len += std::pow(p[i] - q[i], 2.0f);
-    }
-    return std::sqrt(len);
 }
 
 ////////////////////////////////////////

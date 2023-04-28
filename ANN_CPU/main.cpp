@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "stb_image.h"
+#include "../DataLoader/DataLoader.hpp"
 
 #include <cstdio>
 #include <cstdint>
@@ -45,10 +45,49 @@ static float ComputeDistance(const std::vector<float>& p, const std::vector<floa
 static std::vector<float> operator*(const std::vector<float>& v1, const std::vector<float>& v2)
 {
     assert(v1.size() == v2.size());
-    std::vector<float> res(v1.size());
+    std::vector<float> res;
+    res.reserve(v1.size());
     for (std::size_t i = 0; i < v1.size(); ++i)
     {
-        res[i] = v1[i] * v2[i];
+        res.push_back(v1[i] * v2[i]);
+    }
+    return res;
+}
+
+////////////////////////////////////////
+static std::vector<float> operator+(const std::vector<float>& v1, const std::vector<float>& v2)
+{
+    assert(v1.size() == v2.size());
+    std::vector<float> res;
+    res.reserve(v1.size());
+    for (std::size_t i = 0; i < v1.size(); ++i)
+    {
+        res.push_back(v1[i] + v2[i]);
+    }
+    return res;
+}
+
+////////////////////////////////////////
+static std::vector<float> operator-(const std::vector<float>& v1, const std::vector<float>& v2)
+{
+    assert(v1.size() == v2.size());
+    std::vector<float> res;
+    res.reserve(v1.size());
+    for (std::size_t i = 0; i < v1.size(); ++i)
+    {
+        res.push_back(v1[i] - v2[i]);
+    }
+    return res;
+}
+
+////////////////////////////////////////
+static std::vector<float> operator-(float s, const std::vector<float>& v)
+{
+    std::vector<float> res;
+    res.reserve(v.size());
+    for (std::size_t i = 0; i < v.size(); ++i)
+    {
+        res.push_back(s - v[i]);
     }
     return res;
 }
@@ -130,11 +169,15 @@ public:
     void Print() const;
     Layer Dot(const Layer& layer) const;
     Layer Dot(const std::vector<float>& v) const;
+    Weights Dot(const Weights& weights) const;
     Weights Transpose() const;
 
     std::size_t GetSize() const { return mRowCount * mColCount; }
     std::size_t GetRowCount() const { return mRowCount; }
     std::size_t GetColCount() const { return mColCount; }
+
+    std::vector<float> ExtractRow(std::size_t row) const;
+    std::vector<float> ExtractCol(std::size_t col) const;
 
     float& operator[](std::size_t i)
     {
@@ -146,6 +189,36 @@ public:
     {
         assert(i < mWeightMatrix.size());
         return mWeightMatrix[i];
+    }
+
+    Weights& operator+(const Weights& other)
+    {
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+        for (std::size_t i = 0; i < mWeightMatrix.size(); ++i)
+        {
+            mWeightMatrix[i] += other[i];
+        }
+        return *this;
+    }
+
+    Weights& operator=(const Weights& other)
+    {
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+        for (std::size_t i = 0; i < mWeightMatrix.size(); ++i)
+        {
+            mWeightMatrix[i] = other[i];
+        }
+        return *this;
+    }
+
+    Weights& operator+=(const Weights& other)
+    {
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+        for (std::size_t i = 0; i < mWeightMatrix.size(); ++i)
+        {
+            mWeightMatrix[i] += other[i];
+        }
+        return *this;
     }
 };
 
@@ -160,6 +233,32 @@ Weights::Weights(const Layer& layerA, const Layer& layerB,
     std::random_device rd;
     std::uniform_real_distribution dist(lowest, highest);
     std::ranges::for_each(mWeightMatrix, [&](auto& x){ x = dist(rd); });
+}
+
+////////////////////////////////////////
+std::vector<float> Weights::ExtractRow(std::size_t row) const
+{
+    assert(row < mRowCount);
+    std::vector<float> res;
+    res.reserve(mColCount);
+    for (std::size_t i = 0; i < mColCount; ++i)
+    {
+        res.push_back(mWeightMatrix[row * mColCount + i]);
+    }
+    return res;
+}
+
+////////////////////////////////////////
+std::vector<float> Weights::ExtractCol(std::size_t col) const
+{
+    assert(col < mColCount);
+    std::vector<float> res;
+    res.reserve(mRowCount);
+    for (std::size_t i = 0; i < mRowCount; ++i)
+    {
+        res.push_back(mWeightMatrix[col + i * mColCount]);
+    }
+    return res;
 }
 
 ////////////////////////////////////////
@@ -206,6 +305,32 @@ Layer Weights::Dot(const std::vector<float>& v) const
 }
 
 ////////////////////////////////////////
+Weights Weights::Dot(const Weights& weights) const
+{
+    assert(mColCount == weights.GetRowCount());
+
+    std::size_t newRowCount{ mRowCount };
+    std::size_t newColCount{ weights.GetColCount() };
+
+    std::vector<float> newWeights(newRowCount * newColCount);
+
+    for (std::size_t i = 0; i < newRowCount; ++i)
+    {
+        for (std::size_t j = 0; j < newColCount; ++j)
+        {
+            std::vector<float> leftRow = ExtractRow(i);
+            std::vector<float> rightCol = weights.ExtractCol(j);
+
+            newWeights[i * newColCount + j] = std::transform_reduce(leftRow.begin(),
+                                                                    leftRow.end(),
+                                                                    rightCol.begin(),
+                                                                    0.0f);
+        }
+    }
+    return Weights(std::move(newWeights), newRowCount, newColCount);
+}
+
+////////////////////////////////////////
 Weights Weights::Transpose() const
 {
     std::vector<float> res(mRowCount * mColCount);
@@ -246,7 +371,9 @@ public:
     void ResetBiases(float biasesLowest, float biasesHighest);
 
     void ForwardPass(std::function<float(float)> activationFunction);
-    void BackwardPass(std::vector<float>&& errorFromOutput, float learningRate);
+    void BackwardPass(const std::vector<float>& expectedOutput,
+                      const std::vector<float>& actualOutput,
+                      float learningRate);
 
     std::size_t GetParameterCount() const { return mParameterCount; }
 };
@@ -335,25 +462,6 @@ void ANN::ForwardPass(std::function<float(float)> activationFunction)
 }
 
 ////////////////////////////////////////
-using Errors = Layer;
-
-////////////////////////////////////////
-void ANN::BackwardPass(std::vector<float>&& errorFromOutput, float learningRate)
-{
-    assert(errorFromOutput.size() == mOutputLayer.GetNeuronCount());
-
-    Errors prevErrors(std::move(errorFromOutput));
-    for (std::size_t i = mWeights.size() - 1; i != std::numeric_limits<std::size_t>::max(); --i)
-    {
-        // std::vector<float> gradient = 
-
-        Errors errors = mWeights[i].Transpose().Dot(prevErrors);
-        // Fix mWeights[i]
-        prevErrors = std::move(errors);
-    }
-}
-
-////////////////////////////////////////
 static float Sigmoid(float x)
 {
     return 1.0f / (1.0f + std::exp(-x));
@@ -366,36 +474,75 @@ static float SigmoidDerivative(float x)
 }
 
 ////////////////////////////////////////
+static std::vector<float> SigmoidDerivativeVec(const std::vector<float>& v)
+{
+    std::vector<float> res;
+    res.reserve(v.size());
+    for (std::size_t i = 0; i < v.size(); ++i)
+    {
+        res.push_back(SigmoidDerivative(v[i]));
+    }
+    return res;
+}
+
+////////////////////////////////////////
 static float ReLU(float x)
 {
     return std::max(x, 0.0f);
 }
 
 ////////////////////////////////////////
-enum class DatumType
-{
-    TrainNormal,
-    TrainBacteria,
-    TrainVirus,
-
-    TestNormal,
-    TestBacteria,
-    TestVirus
-};
+using Errors = Layer;
 
 ////////////////////////////////////////
-static std::vector<float> ComputeCorrectOutput(DatumType type)
+void ANN::BackwardPass(const std::vector<float>& expectedOutput,
+                       const std::vector<float>& actualOutput,
+                       float learningRate)
+{
+    assert(expectedOutput.size() == actualOutput.size());
+
+    std::vector<float> outputGradient = actualOutput - expectedOutput;
+    std::vector<float> outputNeurons = mOutputLayer.GetNeurons();
+    std::vector<float> activationGradient = outputNeurons * (1.0f - outputNeurons);
+    std::vector<float> prevNeurons = [&](std::size_t hiddenLayerCount)
+    {
+        if (hiddenLayerCount == 0)
+        {
+            return mInputLayer.GetNeurons();
+        }
+        else
+        {
+            return mHiddenLayers[mHiddenLayers.size() - 1].GetNeurons();
+        }
+    }(mHiddenLayers.size());
+
+    Weights nextLayer(outputGradient * activationGradient, outputGradient.size(), 1);
+    Weights prevLayer(std::move(prevNeurons), 1, prevNeurons.size());
+
+    Weights gradient = nextLayer.Dot(prevLayer);
+
+    Weights savedWeights = mWeights[mWeights.size() - 1];
+    mWeights[mWeights.size() - 1] += gradient;
+
+    for (std::size_t i = mWeights.size() - 1; i > 0; --i)
+    {
+        outputGradient = savedWeights.Transpose().Dot();
+    }
+}
+
+////////////////////////////////////////
+static std::vector<float> ComputeCorrectOutput(Tools::DatumType type)
 {
     switch (type)
     {
-        case DatumType::TrainNormal:
-        case DatumType::TestNormal:
+        case Tools::DatumType::TrainNormal:
+        case Tools::DatumType::TestNormal:
             return { 1.0f, 0.0f, 0.0f };
-        case DatumType::TrainBacteria:
-        case DatumType::TestBacteria:
+        case Tools::DatumType::TrainBacteria:
+        case Tools::DatumType::TestBacteria:
             return { 0.0f, 1.0f, 0.0f };
-        case DatumType::TrainVirus:
-        case DatumType::TestVirus:
+        case Tools::DatumType::TrainVirus:
+        case Tools::DatumType::TestVirus:
             return { 0.0f, 0.0f, 1.0f };
         default:
             std::fprintf(stderr, "ERROR: invalid DatumType\n");
@@ -404,231 +551,17 @@ static std::vector<float> ComputeCorrectOutput(DatumType type)
 }
 
 ////////////////////////////////////////
-struct DataLoader
-{
-private:
-    std::vector<float*> mTrainNormalImages;
-    std::vector<float*> mTrainBacteriaImages;
-    std::vector<float*> mTrainVirusImages;
-
-    std::vector<float*> mTestNormalImages;
-    std::vector<float*> mTestBacteriaImages;
-    std::vector<float*> mTestVirusImages;
-
-    std::string mDirPath;
-
-    int mWidth, mHeight;
-    std::size_t mTotalBytesLoaded;
-
-    float* GetXImage(std::size_t i, const std::vector<float*>& imageBuffer) const
-    {
-        assert(i < imageBuffer.size());
-        return imageBuffer[i];
-    }
-
-    void AddToBuffer(const std::string& entryPathStr,
-                     float* data,
-                     std::vector<float*>& normalImageBuffer,
-                     std::vector<float*>& bacteriaImageBuffer,
-                     std::vector<float*>& virusImageBuffer);
-
-public:
-    explicit DataLoader(const std::string& dirPath);
-
-    ~DataLoader();
-
-    DataLoader(const DataLoader&) = delete;
-    DataLoader& operator=(const DataLoader&) = delete;
-
-    DataLoader(DataLoader&&) = default;
-    DataLoader& operator=(DataLoader&&) = default;
-
-    std::string GetDirPath() const { return mDirPath; }
-    std::size_t GetTotalBytesLoaded() const { return mTotalBytesLoaded; }
-
-    std::size_t GetImageCount(DatumType type) const
-    {
-        switch (type)
-        {
-            case DatumType::TrainNormal:
-                return mTrainNormalImages.size();
-            case DatumType::TrainBacteria:
-                return mTrainBacteriaImages.size();
-            case DatumType::TrainVirus:
-                return mTrainVirusImages.size();
-            case DatumType::TestNormal:
-                return mTestNormalImages.size();
-            case DatumType::TestBacteria:
-                return mTestBacteriaImages.size();
-            case DatumType::TestVirus:
-                return mTestVirusImages.size();
-        }
-    }
-
-    float* GetImage(DatumType type, std::size_t i) const
-    {
-        switch (type)
-        {
-            case DatumType::TrainNormal:
-                return GetXImage(i, mTrainNormalImages);
-            case DatumType::TrainBacteria:
-                return GetXImage(i, mTrainBacteriaImages);
-            case DatumType::TrainVirus:
-                return GetXImage(i, mTrainVirusImages);
-            case DatumType::TestNormal:
-                return GetXImage(i, mTestNormalImages);
-            case DatumType::TestBacteria:
-                return GetXImage(i, mTestBacteriaImages);
-            case DatumType::TestVirus:
-                return GetXImage(i, mTestVirusImages);
-            default:
-                std::fprintf(stderr, "ERROR: invalid DatumType\n");
-                return nullptr;
-        }
-    }
-
-    int GetWidth() const { return mWidth; }
-    int GetHeight() const { return mHeight; }
-    std::size_t GetSize() const { return static_cast<std::size_t>(mWidth * mHeight); }
-    std::size_t GetCategoryCount() const { return 3; }
-
-    std::size_t GetTrainNormalCount() const { return mTrainNormalImages.size(); }
-    std::size_t GetTrainBacteriaCount() const { return mTrainBacteriaImages.size(); }
-    std::size_t GetTrainVirusCount() const { return mTrainVirusImages.size(); }
-
-    std::size_t GetTestNormalCount() const { return mTestNormalImages.size(); }
-    std::size_t GetTestBacteriaCount() const { return mTestBacteriaImages.size(); }
-    std::size_t GetTestVirusCount() const { return mTestVirusImages.size(); }
-
-    std::size_t GetTrainTotalCount() const { return GetTrainNormalCount() +
-                                                    GetTrainBacteriaCount() +
-                                                    GetTrainVirusCount(); }
-
-    std::size_t GetTestTotalCount() const { return GetTestNormalCount() +
-                                                   GetTestBacteriaCount() +
-                                                   GetTestVirusCount(); }
-};
-
-////////////////////////////////////////
-void DataLoader::AddToBuffer(const std::string& entryPathStr,
-                             float* data,
-                             std::vector<float*>& normalImageBuffer,
-                             std::vector<float*>& bacteriaImageBuffer,
-                             std::vector<float*>& virusImageBuffer)
-{
-    if (entryPathStr.find("normal") != std::string::npos)
-    {
-        normalImageBuffer.push_back(data);
-    }
-    else if (entryPathStr.find("bacteria") != std::string::npos)
-    {
-        bacteriaImageBuffer.push_back(data);
-    }
-    else if (entryPathStr.find("virus") != std::string::npos)
-    {
-        virusImageBuffer.push_back(data);
-    }
-}
-
-////////////////////////////////////////
-DataLoader::~DataLoader()
-{
-    std::ranges::for_each(mTrainNormalImages, [](auto& data){ std::free(data); });
-    std::ranges::for_each(mTrainBacteriaImages, [](auto& data){ std::free(data); });
-    std::ranges::for_each(mTrainVirusImages, [](auto& data){ std::free(data); });
-
-    std::ranges::for_each(mTestNormalImages, [](auto& data){ std::free(data); });
-    std::ranges::for_each(mTestBacteriaImages, [](auto& data){ std::free(data); });
-    std::ranges::for_each(mTestVirusImages, [](auto& data){ std::free(data); });
-}
-
-////////////////////////////////////////
-DataLoader::DataLoader(const std::string& dirPath)
-    : mDirPath{dirPath}, mWidth{}, mHeight{}, mTotalBytesLoaded{}
-{
-    const std::filesystem::path dataPath{ dirPath };
-    if (!std::filesystem::is_directory(dataPath))
-    {
-        std::fprintf(stderr, "ERROR: %s is not a directory\n", dirPath.c_str());
-        std::exit(EXIT_FAILURE);
-    }
-
-#ifdef _DEBUG
-    std::printf("DataLoader at %p has started to load data from disk...\n", reinterpret_cast<void*>(this));
-#endif
-
-    for (const auto& entry : std::filesystem::directory_iterator(dataPath))
-    {
-        if (std::filesystem::is_regular_file(entry) && !std::filesystem::is_empty(entry) && entry.path().extension() == ".png")
-        {
-            std::string entryPathStr = entry.path().string();
-            int width, height, channelCount;
-            stbi_uc* data = stbi_load(entryPathStr.c_str(), &width, &height, &channelCount, 0);
-            if (!data)
-            {
-                std::fprintf(stderr, "ERROR: failed to load %s\n", entryPathStr.c_str());
-                std::exit(EXIT_FAILURE);
-            }
-            if (0 == mWidth && 0 == mHeight)
-            {
-                mWidth = width;
-                mHeight = height;
-            }
-            assert(width == height && mWidth == width && mHeight == height);
-
-            float* floatData = static_cast<float*>(std::malloc(static_cast<std::size_t>(width * height) * sizeof(float)));
-            if (!floatData)
-            {
-                std::fprintf(stderr, "ERROR: not enough memory for image buffer\n");
-                std::exit(EXIT_FAILURE);
-            }
-
-            for (std::size_t i = 0; i < static_cast<std::size_t>(width * height); ++i)
-            {
-                floatData[i] = static_cast<float>(data[i]) / 255.0f;
-            }
-            stbi_image_free(data);
-            mTotalBytesLoaded += static_cast<std::size_t>(width * height) * sizeof(float);
-
-            if (entryPathStr.find("train") != std::string::npos)
-            {
-                AddToBuffer(entryPathStr, floatData, mTrainNormalImages, mTrainBacteriaImages, mTrainVirusImages);
-            }
-            else if (entryPathStr.find("test") != std::string::npos)
-            {
-                AddToBuffer(entryPathStr, floatData, mTestNormalImages, mTestBacteriaImages, mTestVirusImages);
-            }
-        }
-    }
-
-#ifdef _DEBUG
-    std::printf("DataLoader at %p has loaded %lu training images and %lu testing images\n", reinterpret_cast<void*>(this),
-                                                                                            mTrainNormalImages.size() + mTrainBacteriaImages.size() + mTrainVirusImages.size(),
-                                                                                            mTestNormalImages.size() + mTestBacteriaImages.size() + mTestVirusImages.size());
-    std::printf("DataLoader at %p currently holds %lu bytes in memory\n", reinterpret_cast<void*>(this), mTotalBytesLoaded);
-    std::printf("\n= = = = = = = = = = = = = = = = = = STATS = = = = = = = = = = = = = = = = = =\n");
-    std::printf("[Training]\t[Normal]\t%lu\t[Bacteria]\t%lu\t[Virus]\t%lu\n", mTrainNormalImages.size(),
-                                                                                                      mTrainBacteriaImages.size(),
-                                                                                                      mTrainVirusImages.size());
-    std::printf("[Testing]\t[Normal]\t%lu\t[Bacteria]\t%lu\t[Virus]\t%lu\n", mTestNormalImages.size(),
-                                                                                                   mTestBacteriaImages.size(),
-                                                                                                   mTestVirusImages.size());
-    std::printf("= = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =\n\n");
-#endif
-}
-
-////////////////////////////////////////
-static float TestANN(ANN& ann, const DataLoader& dataLoader, std::function<float(float)> activationFunction)
+static float TestANN(ANN& ann, const Tools::DataLoader& dataLoader, std::function<float(float)> activationFunction)
 {
     float error{};
 
     // normal
     for (std::size_t i = 0; i < dataLoader.GetTestNormalCount(); ++i)
     {
-        ann.SetInput(dataLoader.GetImage(DatumType::TestNormal, i), dataLoader.GetSize());
+        ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestNormal, i), dataLoader.GetSize());
         ann.ForwardPass(activationFunction);
 
-        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestNormal);
+        std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestNormal);
         std::vector<float> actualOutput = ann.GetOutput();
         error += ComputeDistance(expectedOutput, actualOutput);
     }
@@ -636,10 +569,10 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader, std::function<float
     // bacteria
     for (std::size_t i = 0; i < dataLoader.GetTestBacteriaCount(); ++i)
     {
-        ann.SetInput(dataLoader.GetImage(DatumType::TestBacteria, i), dataLoader.GetSize());
+        ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestBacteria, i), dataLoader.GetSize());
         ann.ForwardPass(activationFunction);
 
-        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestBacteria);
+        std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestBacteria);
         std::vector<float> actualOutput = ann.GetOutput();
         error += ComputeDistance(expectedOutput, actualOutput);
     }
@@ -647,10 +580,10 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader, std::function<float
     // virus
     for (std::size_t i = 0; i < dataLoader.GetTestVirusCount(); ++i)
     {
-        ann.SetInput(dataLoader.GetImage(DatumType::TestVirus, i), dataLoader.GetSize());
+        ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestVirus, i), dataLoader.GetSize());
         ann.ForwardPass(activationFunction);
 
-        std::vector<float> expectedOutput = ComputeCorrectOutput(DatumType::TestVirus);
+        std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestVirus);
         std::vector<float> actualOutput = ann.GetOutput();
         error += ComputeDistance(expectedOutput, actualOutput);
     }
@@ -660,7 +593,7 @@ static float TestANN(ANN& ann, const DataLoader& dataLoader, std::function<float
 ////////////////////////////////////////
 int main(int argc, char** argv)
 {
-    DataLoader dataLoader("PneumoniaData");
+    Tools::DataLoader dataLoader("PneumoniaData");
 
     const std::size_t inputNeuronCount{ dataLoader.GetSize() };
     const std::size_t outputNeuronCount{ dataLoader.GetCategoryCount() };

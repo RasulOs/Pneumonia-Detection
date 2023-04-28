@@ -1,6 +1,6 @@
--- ANN-CPU BUILD SCRIPT ---
+-- DATALODER BUILD SCRIPT ---
 
-workspace "ann_cpu"
+workspace "DataLoader"
     configurations { "debug", "release" }
     location "build"
 
@@ -24,27 +24,15 @@ project "stb_image"
 
 project "DataLoader"
     kind "StaticLib"
-
-    includedirs { "../DataLoader" }
-    libdirs { "../DataLoader/" }
-
-    filter "configurations:Debug"
-        libdirs { "../DataLoader/build/debug" }
-
-    filter "configurations:Release"
-        libdirs { "../DataLoader/build/release" }
-
-project "ann_cpu"
-    kind "ConsoleApp"
     language "C++"
-    location "build/ann_cpu"
+    location "build/DataLoader"
     targetdir "build/%{cfg.buildcfg}"
 
     includedirs { "../ThirdParty" }
 
-    files { "main.cpp" }
+    files { "DataLoader.cpp" }
 
-    links { "stb_image", "DataLoader" }
+    links { "stb_image" }
 
     filter "system:linux"
         links { "pthread", "m" }

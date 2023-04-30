@@ -463,9 +463,11 @@ namespace App
             return mBiases[i];
         }
 
-        Matrix ForwardPass(const Matrix& input);
-        Matrix ForwardPass(const std::vector<float>& input);
-        Matrix ForwardPass(float* input, std::size_t size);
+        Matrix FeedForward(const Matrix& input);
+        Matrix FeedForward(const std::vector<float>& input);
+        Matrix FeedForward(float* input, std::size_t size);
+
+        Matrix BackPropagate(const Matrix& input);
     };
 
     ////////////////////////////////////////
@@ -551,7 +553,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix ANN::ForwardPass(const Matrix& input)
+    Matrix ANN::FeedForward(const Matrix& input)
     {
         assert(input.GetRowCount() == mInputLayer.GetRowCount() &&
                input.GetColCount() == mInputLayer.GetColCount());
@@ -580,7 +582,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix ANN::ForwardPass(const std::vector<float>& input)
+    Matrix ANN::FeedForward(const std::vector<float>& input)
     {
         Matrix inputMatrix(static_cast<std::uint32_t>(input.size()), 1);
         for (std::uint32_t row = 0; row < inputMatrix.GetRowCount(); ++row)
@@ -590,11 +592,11 @@ namespace App
                 inputMatrix.SetElement(row, col) = input[row];
             }
         }
-        return ForwardPass(inputMatrix);
+        return FeedForward(inputMatrix);
     }
 
     ////////////////////////////////////////
-    Matrix ANN::ForwardPass(float* input, std::size_t size)
+    Matrix ANN::FeedForward(float* input, std::size_t size)
     {
         assert(input != nullptr && mInputLayer.GetElementCount() == static_cast<std::uint32_t>(size));
 
@@ -606,7 +608,7 @@ namespace App
                 inputMatrix.SetElement(row, col) = input[row];
             }
         }
-        return ForwardPass(inputMatrix);
+        return FeedForward(inputMatrix);
     }
 
     ////////////////////////////////////////
@@ -685,7 +687,7 @@ namespace App
         Matrix error(ann.GetOutputNeuronCount(), 1);
         for (std::size_t i = 0; i < count; ++i)
         {
-            Matrix actualOutput = ann.ForwardPass(dataLoader.GetImage(category, i), dataLoader.GetSize());
+            Matrix actualOutput = ann.FeedForward(dataLoader.GetImage(category, i), dataLoader.GetSize());
             Matrix expectedOutput = ComputeCorrectOutput(category);
 
             error += expectedOutput - actualOutput;

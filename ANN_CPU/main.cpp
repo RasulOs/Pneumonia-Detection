@@ -412,14 +412,14 @@ namespace App
     struct ANN
     {
     private:
-        Matrix mInputLayer;
-        std::vector<Matrix> mHiddenLayers;
-        Matrix mOutputLayer;
+        std::uint32_t mInputLayerNeuronCount;
+        std::uint32_t mOutputLayerNeuronCount;
+        std::uint32_t mHiddenLayerCount;
+        std::uint32_t mHiddenLayerNeuronCount;
 
         std::vector<Matrix> mWeights;
         std::vector<float> mBiases;
 
-        void CreateHiddenLayers(std::uint32_t hiddenLayerCount, std::uint32_t hiddenLayerNeuronCount);
         void CreateRandomBiases(float min, float max);
         void CreateRandomWeights(std::uint32_t inputLayerNeuronCount,
                                  std::uint32_t outputLayerNeuronCount,
@@ -432,24 +432,15 @@ namespace App
             std::uint32_t hiddenLayerNeuronCount,
             std::uint32_t hiddenLayerCount);
 
-        std::uint32_t GetInputNeuronCount() const { return mInputLayer.GetElementCount(); }
-        std::uint32_t GetHiddenNeuronCount() const { return mHiddenLayers.size() > 0 ? mHiddenLayers[0].GetElementCount() : 0; }
-        std::uint32_t GetOutputNeuronCount() const { return mOutputLayer.GetElementCount(); }
+        std::uint32_t GetInputNeuronCount() const { return mInputLayerNeuronCount; }
+        std::uint32_t GetHiddenNeuronCount() const { return mHiddenLayerNeuronCount; }
+        std::uint32_t GetOutputNeuronCount() const { return mOutputLayerNeuronCount; }
 
-        std::uint32_t GetHiddenLayerCount() const { return static_cast<std::uint32_t>(mHiddenLayers.size()); }
+        std::uint32_t GetHiddenLayerCount() const { return mHiddenLayerCount; }
         std::uint32_t GetWeightCount() const { return static_cast<std::uint32_t>(mWeights.size()); }
         std::uint32_t GetBiasCount() const { return static_cast<std::uint32_t>(mBiases.size()); }
 
         std::uint32_t GetParameterCount() const;
-
-        Matrix GetInputLayer() const { return mInputLayer; }
-        Matrix GetOutputLayer() const { return mOutputLayer; }
-
-        Matrix GetHiddenLayer(std::uint32_t i) const
-        {
-            assert(i < static_cast<std::uint32_t>(mHiddenLayers.size()));
-            return mHiddenLayers[i];
-        }
 
         Matrix GetWeightMatrix(std::uint32_t i) const
         {
@@ -467,19 +458,10 @@ namespace App
         Matrix FeedForward(const std::vector<float>& input);
         Matrix FeedForward(float* input, std::size_t size);
 
-        Matrix BackPropagate(const Matrix& input);
+        void Train(const std::vector<Matrix>& givenInputs,
+                   const std::vector<Matrix>& expectedOutputs,
+                   float learningRate);
     };
-
-    ////////////////////////////////////////
-    void ANN::CreateHiddenLayers(std::uint32_t hiddenLayerCount, std::uint32_t hiddenLayerNeuronCount)
-    {
-        assert(hiddenLayerNeuronCount > 0);
-
-        for (std::uint32_t i = 0; i < hiddenLayerCount; ++i)
-        {
-            mHiddenLayers.push_back(Matrix(hiddenLayerNeuronCount, 1));
-        }
-    }
 
     ////////////////////////////////////////
     void ANN::CreateRandomBiases(float min, float max)
@@ -512,6 +494,8 @@ namespace App
         }
         else
         {
+            assert(mHiddenLayerNeuronCount > 0);
+
             float min = -std::sqrt(2.0f / static_cast<float>(inputLayerNeuronCount));
             float max = -min;
 
@@ -521,9 +505,9 @@ namespace App
                 min = -std::sqrt(2.0f / static_cast<float>(hiddenLayerNeuronCount));
                 max = -min;
 
-                mWeights.push_back(CreateRandomMatrix(mHiddenLayers[i].GetElementCount(), mHiddenLayers[i - 1].GetElementCount(), min, max));
+                mWeights.push_back(CreateRandomMatrix(mHiddenLayerNeuronCount, mHiddenLayerNeuronCount, min, max));
             }
-            mWeights.push_back(CreateRandomMatrix(outputLayerNeuronCount, mHiddenLayers[hiddenLayerCount - 1].GetElementCount(), min, max));
+            mWeights.push_back(CreateRandomMatrix(outputLayerNeuronCount, mHiddenLayerNeuronCount, min, max));
         }
     }
 
@@ -532,8 +516,10 @@ namespace App
              std::uint32_t outputLayerNeuronCount,
              std::uint32_t hiddenLayerNeuronCount,
              std::uint32_t hiddenLayerCount)
-        : mInputLayer(inputLayerNeuronCount, 1),
-          mOutputLayer(outputLayerNeuronCount, 1)
+        : mInputLayerNeuronCount{inputLayerNeuronCount},
+          mOutputLayerNeuronCount{outputLayerNeuronCount},
+          mHiddenLayerCount{hiddenLayerCount},
+          mHiddenLayerNeuronCount{hiddenLayerNeuronCount}
     {
 #ifdef _DEBUG
         std::printf("Initializing ANN at %p with %u input neurons, %u output neurons, %u hidden layers and %u neurons in each hidden layer\n", reinterpret_cast<void*>(this),
@@ -543,7 +529,6 @@ namespace App
                                                                                                                                                hiddenLayerNeuronCount);
 #endif
 
-        CreateHiddenLayers(hiddenLayerCount, hiddenLayerNeuronCount);
         CreateRandomWeights(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
         CreateRandomBiases(0.0f, 1.0f);
 
@@ -555,30 +540,25 @@ namespace App
     ////////////////////////////////////////
     Matrix ANN::FeedForward(const Matrix& input)
     {
-        assert(input.GetRowCount() == mInputLayer.GetRowCount() &&
-               input.GetColCount() == mInputLayer.GetColCount());
+        assert(input.GetRowCount() == mInputLayerNeuronCount);
 
-        mInputLayer = input;
-
-        if (mHiddenLayers.size() == 0)
+        if (mHiddenLayerCount == 0)
         {
             assert(mWeights.size() == 1);
 
-            mOutputLayer = ApplyActivationToMatrix(mWeights[0] * mInputLayer, SigmoidActivation);
+            return ApplyActivationToMatrix(mWeights[0] * input, SigmoidActivation);
         }
         else
         {
             assert(mWeights.size() > 1);
 
-            mHiddenLayers[0] = ApplyActivationToMatrix(mWeights[0] * mInputLayer, ReLUActivation);
+            Matrix hiddenLayerOutput = ApplyActivationToMatrix(mWeights[0] * input, ReLUActivation);
             for (std::uint32_t i = 1; i < GetHiddenLayerCount(); ++i)
             {
-                mHiddenLayers[i] = ApplyActivationToMatrix(mWeights[i] * mHiddenLayers[i - 1], ReLUActivation);
+                hiddenLayerOutput = ApplyActivationToMatrix(mWeights[i] * hiddenLayerOutput, ReLUActivation);
             }
-            mOutputLayer = ApplyActivationToMatrix(mWeights[mWeights.size() - 1] * mHiddenLayers[mHiddenLayers.size() - 1], SigmoidActivation);
+            return ApplyActivationToMatrix(mWeights[mWeights.size() - 1] * hiddenLayerOutput, SigmoidActivation);
         }
-
-        return mOutputLayer;
     }
 
     ////////////////////////////////////////
@@ -598,7 +578,7 @@ namespace App
     ////////////////////////////////////////
     Matrix ANN::FeedForward(float* input, std::size_t size)
     {
-        assert(input != nullptr && mInputLayer.GetElementCount() == static_cast<std::uint32_t>(size));
+        assert(input != nullptr && mInputLayerNeuronCount == static_cast<std::uint32_t>(size));
 
         Matrix inputMatrix(static_cast<std::uint32_t>(size), 1);
         for (std::uint32_t row = 0; row < inputMatrix.GetRowCount(); ++row)
@@ -612,16 +592,21 @@ namespace App
     }
 
     ////////////////////////////////////////
+    void ANN::Train(const std::vector<Matrix>& givenInputs,
+                    const std::vector<Matrix>& expectedOutputs,
+                    float learningRate)
+    {
+        assert(givenInputs.size() == expectedOutputs.size());
+
+        if (mHiddenLayerCount == 0)
+        {
+        }
+    }
+
+    ////////////////////////////////////////
     std::uint32_t ANN::GetParameterCount() const
     {
         std::uint32_t count{};
-
-        count += mInputLayer.GetElementCount();
-        for (const Matrix& hiddenLayer : mHiddenLayers)
-        {
-            count += hiddenLayer.GetElementCount();
-        }
-        count += mOutputLayer.GetElementCount();
 
         for (const Matrix& weightMatrix : mWeights)
         {
@@ -629,6 +614,22 @@ namespace App
         }
 
         return count;
+    }
+
+    ////////////////////////////////////////
+    static std::uint32_t ArgMaxRow(const Matrix& matrix)
+    {
+        assert(matrix.GetColCount() == 1);
+
+        std::uint32_t maxRow{};
+        for (std::uint32_t row = 1; row < matrix.GetRowCount(); ++row)
+        {
+            if (matrix.GetElement(row, 0) > matrix.GetElement(maxRow, 0))
+            {
+                maxRow = row;
+            }
+        }
+        return maxRow;
     }
 
     ////////////////////////////////////////
@@ -660,7 +661,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    static Matrix TestForSpecificCategory(ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
+    static float TestForSpecificCategory(ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
     {
         assert(Tools::DatumType::TestNormal == category ||
                Tools::DatumType::TestBacteria == category ||
@@ -684,35 +685,38 @@ namespace App
             }
         }();
 
-        Matrix error(ann.GetOutputNeuronCount(), 1);
+        float correctCount{};
         for (std::size_t i = 0; i < count; ++i)
         {
             Matrix actualOutput = ann.FeedForward(dataLoader.GetImage(category, i), dataLoader.GetSize());
             Matrix expectedOutput = ComputeCorrectOutput(category);
 
-            error += expectedOutput - actualOutput;
+            if (ArgMaxRow(actualOutput) == ArgMaxRow(expectedOutput))
+            {
+                ++correctCount;
+            }
         }
-        return error;
+        return correctCount / static_cast<float>(count);
     }
 
     ////////////////////////////////////////
-    static Matrix TestANN(ANN& ann, const Tools::DataLoader& dataLoader)
+    static float TestANN(ANN& ann, const Tools::DataLoader& dataLoader)
     {
 #ifdef _DEBUG
         std::printf("Starting testing ...\n");
 #endif
 
-        Matrix errorMatrix(ann.GetOutputNeuronCount(), 1);
+        float accuracy{};
 
-        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestNormal);
-        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestBacteria);
-        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestVirus);
+        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestNormal);
+        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestBacteria);
+        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestVirus);
 
 #ifdef _DEBUG
         std::printf("Testing has finished\n");
 #endif
 
-        return errorMatrix;
+        return accuracy / 3.0f;
     }
 }
 
@@ -728,8 +732,7 @@ int main(int argc, char** argv)
 
     App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 
-    App::Matrix errorMatrix = App::TestANN(ann, dataLoader);
-    errorMatrix.Print();
+    std::printf("Model accuracy: %.6f\n", App::TestANN(ann, dataLoader));
 
     return 0;
 }

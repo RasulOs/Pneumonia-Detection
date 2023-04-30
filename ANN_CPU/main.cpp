@@ -41,12 +41,6 @@ namespace App
     public:
         Matrix(std::uint32_t rowCount, std::uint32_t colCount);
 
-        Matrix(const Matrix&);
-        Matrix& operator=(const Matrix&);
-
-        Matrix(Matrix&&);
-        Matrix& operator=(Matrix&&);
-
         std::uint32_t GetRowCount() const { return mRowCount; }
         std::uint32_t GetColCount() const { return mColCount; }
         std::uint32_t GetElementCount() const { return mRowCount * mColCount; }
@@ -68,10 +62,20 @@ namespace App
         Matrix operator*(const Matrix&) const;
         Matrix operator/(const Matrix&) const;
 
+        Matrix& operator+=(const Matrix&);
+        Matrix& operator-=(const Matrix&);
+        Matrix& operator*=(const Matrix&);
+        Matrix& operator/=(const Matrix&);
+
         Matrix operator+(float) const;
         Matrix operator-(float) const;
         Matrix operator*(float) const;
         Matrix operator/(float) const;
+
+        Matrix& operator+=(float);
+        Matrix& operator-=(float);
+        Matrix& operator*=(float);
+        Matrix& operator/=(float);
 
         Matrix Transpose() const;
 
@@ -119,55 +123,58 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix::Matrix(const Matrix& other)
-        : mRowCount{other.mRowCount}, mColCount{other.mColCount},
-          mData(mRowCount * mColCount)
+    Matrix& Matrix::operator+=(const Matrix& other)
     {
-        for (std::uint32_t row = 0; row < mRowCount; ++row)
-        {
-            for (std::uint32_t col = 0; col < mColCount; ++col)
-            {
-                SetElement(row, col) = other.GetElement(row, col);
-            }
-        }
-    }
-
-    ////////////////////////////////////////
-    Matrix& Matrix::operator=(const Matrix& other)
-    {
-        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
-
-        if (this != &other)
-        {
-            for (std::uint32_t row = 0; row < mRowCount; ++row)
-            {
-                for (std::uint32_t col = 0; col < mColCount; ++col)
-                {
-                    SetElement(row, col) = other.GetElement(row, col);
-                }
-            }
-        }
+        *this = *this + other;
         return *this;
     }
 
     ////////////////////////////////////////
-    Matrix::Matrix(Matrix&& other)
-        : mRowCount{other.mRowCount}, mColCount{other.mColCount},
-          mData{std::move(other.mData)}
+    Matrix& Matrix::operator-=(const Matrix& other)
     {
-        other.mRowCount = other.mColCount = 0;
+        *this = *this - other;
+        return *this;
     }
 
     ////////////////////////////////////////
-    Matrix& Matrix::operator=(Matrix&& other)
+    Matrix& Matrix::operator*=(const Matrix& other)
     {
-        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+        *this = *this * other;
+        return *this;
+    }
 
-        if (this != &other)
-        {
-            mData = std::move(other.mData);
-            other.mRowCount = other.mColCount = 0;
-        }
+    ////////////////////////////////////////
+    Matrix& Matrix::operator/=(const Matrix& other)
+    {
+        *this = *this / other;
+        return *this;
+    }
+
+    ////////////////////////////////////////
+    Matrix& Matrix::operator+=(float s)
+    {
+        *this = *this + s;
+        return *this;
+    }
+
+    ////////////////////////////////////////
+    Matrix& Matrix::operator-=(float s)
+    {
+        *this = *this - s;
+        return *this;
+    }
+
+    ////////////////////////////////////////
+    Matrix& Matrix::operator*=(float s)
+    {
+        *this = *this * s;
+        return *this;
+    }
+
+    ////////////////////////////////////////
+    Matrix& Matrix::operator/=(float s)
+    {
+        *this = *this / s;
         return *this;
     }
 
@@ -458,6 +465,7 @@ namespace App
 
         Matrix ForwardPass(const Matrix& input);
         Matrix ForwardPass(const std::vector<float>& input);
+        Matrix ForwardPass(float* input, std::size_t size);
     };
 
     ////////////////////////////////////////
@@ -525,9 +533,21 @@ namespace App
         : mInputLayer(inputLayerNeuronCount, 1),
           mOutputLayer(outputLayerNeuronCount, 1)
     {
+#ifdef _DEBUG
+        std::printf("Initializing ANN at %p with %u input neurons, %u output neurons, %u hidden layers and %u neurons in each hidden layer\n", reinterpret_cast<void*>(this),
+                                                                                                                                               inputLayerNeuronCount,
+                                                                                                                                               outputLayerNeuronCount,
+                                                                                                                                               hiddenLayerCount,
+                                                                                                                                               hiddenLayerNeuronCount);
+#endif
+
         CreateHiddenLayers(hiddenLayerCount, hiddenLayerNeuronCount);
         CreateRandomWeights(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
         CreateRandomBiases(0.0f, 1.0f);
+
+#ifdef _DEBUG
+        std::printf("ANN at %p is initialized\n\n", reinterpret_cast<void*>(this));
+#endif
     }
 
     ////////////////////////////////////////
@@ -574,6 +594,22 @@ namespace App
     }
 
     ////////////////////////////////////////
+    Matrix ANN::ForwardPass(float* input, std::size_t size)
+    {
+        assert(input != nullptr && mInputLayer.GetElementCount() == static_cast<std::uint32_t>(size));
+
+        Matrix inputMatrix(static_cast<std::uint32_t>(size), 1);
+        for (std::uint32_t row = 0; row < inputMatrix.GetRowCount(); ++row)
+        {
+            for (std::uint32_t col = 0; col < inputMatrix.GetColCount(); ++col)
+            {
+                inputMatrix.SetElement(row, col) = input[row];
+            }
+        }
+        return ForwardPass(inputMatrix);
+    }
+
+    ////////////////////////////////////////
     std::uint32_t ANN::GetParameterCount() const
     {
         std::uint32_t count{};
@@ -594,96 +630,104 @@ namespace App
     }
 
     ////////////////////////////////////////
-    static std::vector<float> ComputeCorrectOutput(Tools::DatumType type)
+    static Matrix ComputeCorrectOutput(Tools::DatumType type)
     {
+        Matrix output(3, 1);
         switch (type)
         {
             case Tools::DatumType::TrainNormal:
             case Tools::DatumType::TestNormal:
-                return { 0.99f, 0.01f, 0.01f };
+                output.SetElement(0, 0) = 0.99f;
+                output.SetElement(1, 0) = 0.01f;
+                output.SetElement(2, 0) = 0.01f;
+                break;
             case Tools::DatumType::TrainBacteria:
             case Tools::DatumType::TestBacteria:
-                return { 0.01f, 0.99f, 0.01f };
+                output.SetElement(0, 0) = 0.01f;
+                output.SetElement(1, 0) = 0.99f;
+                output.SetElement(2, 0) = 0.01f;
+                break;
             case Tools::DatumType::TrainVirus:
             case Tools::DatumType::TestVirus:
-                return { 0.01f, 0.01f, 0.99f };
-            default:
-                std::fprintf(stderr, "ERROR: invalid DatumType\n");
-                return { 0.01f, 0.01f, 0.01f };
+                output.SetElement(0, 0) = 0.01f;
+                output.SetElement(1, 0) = 0.01f;
+                output.SetElement(2, 0) = 0.99f;
+                break;
         }
+        return output;
     }
 
-#if 0
-
     ////////////////////////////////////////
-    static float TestANN(ANN& ann, const Tools::DataLoader& dataLoader, std::function<float(float)> activationFunction)
+    static Matrix TestForSpecificCategory(ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
     {
-        float error{};
+        assert(Tools::DatumType::TestNormal == category ||
+               Tools::DatumType::TestBacteria == category ||
+               Tools::DatumType::TestVirus == category);
 
-        // normal
-        for (std::size_t i = 0; i < dataLoader.GetTestNormalCount(); ++i)
+        std::size_t count = [&]() -> std::size_t
         {
-            ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestNormal, i), dataLoader.GetSize());
-            ann.ForwardPass(activationFunction);
+            switch (category)
+            {
+                case Tools::DatumType::TestNormal:
+                    return dataLoader.GetTestNormalCount();
+                case Tools::DatumType::TestBacteria:
+                    return dataLoader.GetTestBacteriaCount();
+                case Tools::DatumType::TestVirus:
+                    return dataLoader.GetTestVirusCount();
+                case Tools::DatumType::TrainNormal:
+                case Tools::DatumType::TrainBacteria:
+                case Tools::DatumType::TrainVirus:
+                default:
+                    return 0;
+            }
+        }();
 
-            std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestNormal);
-            std::vector<float> actualOutput = ann.GetOutput();
-            error += ComputeDistance(expectedOutput, actualOutput);
-        }
-
-        // bacteria
-        for (std::size_t i = 0; i < dataLoader.GetTestBacteriaCount(); ++i)
+        Matrix error(ann.GetOutputNeuronCount(), 1);
+        for (std::size_t i = 0; i < count; ++i)
         {
-            ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestBacteria, i), dataLoader.GetSize());
-            ann.ForwardPass(activationFunction);
+            Matrix actualOutput = ann.ForwardPass(dataLoader.GetImage(category, i), dataLoader.GetSize());
+            Matrix expectedOutput = ComputeCorrectOutput(category);
 
-            std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestBacteria);
-            std::vector<float> actualOutput = ann.GetOutput();
-            error += ComputeDistance(expectedOutput, actualOutput);
-        }
-
-        // virus
-        for (std::size_t i = 0; i < dataLoader.GetTestVirusCount(); ++i)
-        {
-            ann.SetInput(dataLoader.GetImage(Tools::DatumType::TestVirus, i), dataLoader.GetSize());
-            ann.ForwardPass(activationFunction);
-
-            std::vector<float> expectedOutput = ComputeCorrectOutput(Tools::DatumType::TestVirus);
-            std::vector<float> actualOutput = ann.GetOutput();
-            error += ComputeDistance(expectedOutput, actualOutput);
+            error += expectedOutput - actualOutput;
         }
         return error;
     }
 
+    ////////////////////////////////////////
+    static Matrix TestANN(ANN& ann, const Tools::DataLoader& dataLoader)
+    {
+#ifdef _DEBUG
+        std::printf("Starting testing ...\n");
 #endif
+
+        Matrix errorMatrix(ann.GetOutputNeuronCount(), 1);
+
+        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestNormal);
+        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestBacteria);
+        errorMatrix += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestVirus);
+
+#ifdef _DEBUG
+        std::printf("Testing has finished\n");
+#endif
+
+        return errorMatrix;
+    }
 }
 
 ////////////////////////////////////////
 int main(int argc, char** argv)
 {
-#if 0
     Tools::DataLoader dataLoader("PneumoniaData");
 
-    const std::size_t inputNeuronCount{ dataLoader.GetSize() };
-    const std::size_t outputNeuronCount{ dataLoader.GetCategoryCount() };
-    const std::size_t hiddenLayerNeuronCount{ 50 };
-    const std::size_t hiddenLayerCount{ 3 };
-
-    App::ANN ann(inputNeuronCount, outputNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
-
-    float error = App::TestANN(ann, dataLoader, App::Sigmoid);
-    std::printf("ANN Error Rate: %.4f\n", error);
-#endif
-
-    std::uint32_t inputLayerNeuronCount{ 3 };
-    std::uint32_t outputLayerNeuronCount{ 3 };
+    std::uint32_t inputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetSize()) };
+    std::uint32_t outputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetCategoryCount()) };
     std::uint32_t hiddenLayerNeuronCount{ 100 };
-    std::uint32_t hiddenLayerCount{ 5 };
+    std::uint32_t hiddenLayerCount{ 2 };
 
     App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
-    std::printf("ANN parameter count: %u\n", ann.GetParameterCount());
 
-    Tools::DataLoader dataLoader("PneumoniaData");
+    App::Matrix errorMatrix = App::TestANN(ann, dataLoader);
+    errorMatrix.Print();
 
     return 0;
 }

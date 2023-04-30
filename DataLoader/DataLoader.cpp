@@ -94,7 +94,11 @@ namespace Tools
 
                 for (std::size_t i = 0; i < static_cast<std::size_t>(width * height); ++i)
                 {
-                    floatData[i] = static_cast<float>(data[i]) / 255.0f;
+                    floatData[i] = static_cast<float>(data[i]) / 255.0f + 0.01f;
+                    if (floatData[i] > 0.99f)
+                    {
+                        floatData[i] = 0.99f;
+                    }
                 }
                 stbi_image_free(data);
                 mTotalBytesLoaded += static_cast<std::size_t>(width * height) * sizeof(float);

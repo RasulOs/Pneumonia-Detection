@@ -14,25 +14,13 @@ project "stb_image"
 
     files { "../ThirdParty/stb_image.c" }
 
-    filter "configurations:Debug"
+    filter "configurations:debug"
         defines { "_DEBUG", "DEBUG" }
         symbols "On"
 
-    filter "configurations:Release"
+    filter "configurations:release"
         defines { "NDEBUG" }
         optimize "On"
-
-project "DataLoader"
-    kind "StaticLib"
-
-    includedirs { "../DataLoader" }
-    libdirs { "../DataLoader/" }
-
-    filter "configurations:Debug"
-        libdirs { "../DataLoader/build/debug" }
-
-    filter "configurations:Release"
-        libdirs { "../DataLoader/build/release" }
 
 project "ann_cpu"
     kind "ConsoleApp"
@@ -40,22 +28,24 @@ project "ann_cpu"
     location "build/ann_cpu"
     targetdir "build/%{cfg.buildcfg}"
 
-    includedirs { "../ThirdParty" }
+    includedirs { "../ThirdParty", "../DataLoader" }
 
-    files { "main.cpp" }
+    files { "main.cpp", "../DataLoader/DataLoader.cpp" }
 
-    links { "stb_image", "DataLoader" }
+    links { "stb_image" }
 
     filter "system:linux"
         links { "pthread", "m" }
 
-    filter "configurations:Debug"
+    filter "configurations:debug"
         defines { "_DEBUG", "DEBUG" }
         symbols "On"
+        libdirs { "../DataLoader/build/debug" }
 
-    filter "configurations:Release"
+    filter "configurations:release"
         defines { "NDEBUG" }
         optimize "On"
+        libdirs { "../DataLoader/build/release" }
 
     filter { "system:linux", "action:gmake2" }
         buildoptions { "-std=c++20",
@@ -105,7 +95,7 @@ project "ann_cpu"
                        "-fno-exceptions",
                        "-Wno-suggest-attribute=format" }
 
-    filter { "system:linux", "action:gmake2", "configurations:Debug" }
+    filter { "system:linux", "action:gmake2", "configurations:debug" }
         buildoptions { "-Wno-unused-but-set-variable",
                        "-Wno-unused-variable",
                        "-Wno-unused-function",

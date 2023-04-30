@@ -678,13 +678,12 @@ int main(int argc, char** argv)
     std::uint32_t inputLayerNeuronCount{ 3 };
     std::uint32_t outputLayerNeuronCount{ 3 };
     std::uint32_t hiddenLayerNeuronCount{ 100 };
-    std::uint32_t hiddenLayerCount{ 10 };
+    std::uint32_t hiddenLayerCount{ 5 };
 
     App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
     std::printf("ANN parameter count: %u\n", ann.GetParameterCount());
 
-    App::Matrix output = ann.ForwardPass({ 0.5f, 0.6f, 0.7f });
-    output.Print();
+    Tools::DataLoader dataLoader("PneumoniaData");
 
     return 0;
 }

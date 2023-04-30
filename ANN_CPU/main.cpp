@@ -64,7 +64,6 @@ namespace App
 
         Matrix& operator+=(const Matrix&);
         Matrix& operator-=(const Matrix&);
-        Matrix& operator*=(const Matrix&);
         Matrix& operator/=(const Matrix&);
 
         Matrix operator+(float) const;
@@ -125,56 +124,97 @@ namespace App
     ////////////////////////////////////////
     Matrix& Matrix::operator+=(const Matrix& other)
     {
-        *this = *this + other;
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) += other.GetElement(row, col);
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator-=(const Matrix& other)
     {
-        *this = *this - other;
-        return *this;
-    }
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
 
-    ////////////////////////////////////////
-    Matrix& Matrix::operator*=(const Matrix& other)
-    {
-        *this = *this * other;
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) -= other.GetElement(row, col);
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator/=(const Matrix& other)
     {
-        *this = *this / other;
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) /= other.GetElement(row, col);
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator+=(float s)
     {
-        *this = *this + s;
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) += s;
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator-=(float s)
     {
-        *this = *this - s;
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) -= s;
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator*=(float s)
     {
-        *this = *this * s;
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) *= s;
+            }
+        }
         return *this;
     }
 
     ////////////////////////////////////////
     Matrix& Matrix::operator/=(float s)
     {
-        *this = *this / s;
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) /= s;
+            }
+        }
         return *this;
     }
 
@@ -598,8 +638,31 @@ namespace App
     {
         assert(givenInputs.size() == expectedOutputs.size());
 
+        std::uint32_t batchCount{ static_cast<std::uint32_t>(givenInputs.size()) };
+
         if (mHiddenLayerCount == 0)
         {
+            assert(mWeights.size() == 1);
+
+            Matrix averageError(mOutputLayerNeuronCount, 1);
+            Matrix averageInput(mInputLayerNeuronCount, 1);
+            Matrix averageOutput(mOutputLayerNeuronCount, 1);
+
+            for (std::uint32_t i = 0; i < batchCount; ++i)
+            {
+                averageInput += givenInputs[i];
+
+                Matrix output = ApplyActivationToMatrix(mWeights[0] * givenInputs[i], SigmoidActivation);
+                averageOutput += output;
+
+                averageError += expectedOutputs[i] - output;
+            }
+
+            averageError /= static_cast<float>(batchCount);
+            averageInput /= static_cast<float>(batchCount);
+            averageOutput /= static_cast<float>(batchCount);
+
+            mWeights[0] += averageError * ApplyActivationToMatrix(averageOutput, SigmoidDerivative) * averageInput.Transpose() * learningRate;
         }
     }
 
@@ -728,7 +791,7 @@ int main(int argc, char** argv)
     std::uint32_t inputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetSize()) };
     std::uint32_t outputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetCategoryCount()) };
     std::uint32_t hiddenLayerNeuronCount{ 100 };
-    std::uint32_t hiddenLayerCount{ 2 };
+    std::uint32_t hiddenLayerCount{ 0 };
 
     App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 

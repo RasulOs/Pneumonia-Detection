@@ -28,9 +28,9 @@ project "ann_cpu"
     location "build/ann_cpu"
     targetdir "build/%{cfg.buildcfg}"
 
-    includedirs { "../ThirdParty", "../DataLoader" }
+    includedirs { "../ThirdParty" }
 
-    files { "main.cpp", "../DataLoader/DataLoader.cpp" }
+    files { "ann_cpu.cpp", "DataLoader.cpp" }
 
     links { "stb_image" }
 
@@ -40,12 +40,10 @@ project "ann_cpu"
     filter "configurations:debug"
         defines { "_DEBUG", "DEBUG" }
         symbols "On"
-        libdirs { "../DataLoader/build/debug" }
 
     filter "configurations:release"
         defines { "NDEBUG" }
         optimize "On"
-        libdirs { "../DataLoader/build/release" }
 
     filter { "system:linux", "action:gmake2" }
         buildoptions { "-std=c++20",

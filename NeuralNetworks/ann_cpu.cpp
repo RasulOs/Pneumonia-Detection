@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "../DataLoader/DataLoader.hpp"
+#include "DataLoader.hpp"
 
 #include <cstdio>
 #include <cstdint>
@@ -28,7 +28,7 @@
 #include <functional>
 #include <string>
 
-namespace App
+namespace NeuralNetworks
 {
     ////////////////////////////////////////
     struct Matrix
@@ -802,12 +802,12 @@ int main(int argc, char** argv)
     std::uint32_t hiddenLayerNeuronCount{ 100 };
     std::uint32_t hiddenLayerCount{ 0 };
 
-    App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
+    NeuralNetworks::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 
     std::uint32_t epochCount{ 10 };
-    App::TrainANN(ann, dataLoader, epochCount);
+    NeuralNetworks::TrainANN(ann, dataLoader, epochCount);
 
-    std::printf("Model accuracy: %.6f\n", App::TestANN(ann, dataLoader));
+    std::printf("Model accuracy: %.6f\n", NeuralNetworks::TestANN(ann, dataLoader));
 
     return 0;
 }

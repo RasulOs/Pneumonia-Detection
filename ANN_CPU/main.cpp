@@ -494,9 +494,9 @@ namespace App
             return mBiases[i];
         }
 
-        Matrix FeedForward(const Matrix& input);
-        Matrix FeedForward(const std::vector<float>& input);
-        Matrix FeedForward(float* input, std::size_t size);
+        Matrix FeedForward(const Matrix& input) const;
+        Matrix FeedForward(const std::vector<float>& input) const;
+        Matrix FeedForward(float* input, std::size_t size) const;
 
         void Train(const std::vector<Matrix>& givenInputs,
                    const std::vector<Matrix>& expectedOutputs,
@@ -578,7 +578,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix ANN::FeedForward(const Matrix& input)
+    Matrix ANN::FeedForward(const Matrix& input) const
     {
         assert(input.GetRowCount() == mInputLayerNeuronCount);
 
@@ -602,7 +602,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix ANN::FeedForward(const std::vector<float>& input)
+    Matrix ANN::FeedForward(const std::vector<float>& input) const
     {
         Matrix inputMatrix(static_cast<std::uint32_t>(input.size()), 1);
         for (std::uint32_t row = 0; row < inputMatrix.GetRowCount(); ++row)
@@ -616,7 +616,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    Matrix ANN::FeedForward(float* input, std::size_t size)
+    Matrix ANN::FeedForward(float* input, std::size_t size) const
     {
         assert(input != nullptr && mInputLayerNeuronCount == static_cast<std::uint32_t>(size));
 
@@ -724,7 +724,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    static float TestForSpecificCategory(ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
+    static float TestForSpecificCategory(const ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
     {
         assert(Tools::DatumType::TestNormal == category ||
                Tools::DatumType::TestBacteria == category ||
@@ -763,7 +763,7 @@ namespace App
     }
 
     ////////////////////////////////////////
-    static float TestANN(ANN& ann, const Tools::DataLoader& dataLoader)
+    static float TestANN(const ANN& ann, const Tools::DataLoader& dataLoader)
     {
 #ifdef _DEBUG
         std::printf("Starting testing ...\n");
@@ -781,6 +781,15 @@ namespace App
 
         return accuracy / 3.0f;
     }
+
+    ////////////////////////////////////////
+    static void TrainANN(ANN& ann, const Tools::DataLoader& dataLoader, std::uint32_t epochCount)
+    {
+        // train normal images
+        for (std::uint32_t i = 0; i < epochCount; ++i)
+        {
+        }
+    }
 }
 
 ////////////////////////////////////////
@@ -794,6 +803,9 @@ int main(int argc, char** argv)
     std::uint32_t hiddenLayerCount{ 0 };
 
     App::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
+
+    std::uint32_t epochCount{ 10 };
+    App::TrainANN(ann, dataLoader, epochCount);
 
     std::printf("Model accuracy: %.6f\n", App::TestANN(ann, dataLoader));
 

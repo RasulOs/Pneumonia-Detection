@@ -59,8 +59,7 @@ namespace Tools
 
         float* GetXImage(std::size_t i, const std::vector<float*>& imageBuffer) const
         {
-            assert(i < imageBuffer.size());
-            return imageBuffer[i];
+            return i < imageBuffer.size() ? imageBuffer[i] : nullptr;
         }
 
         void AddToBuffer(const std::string& entryPathStr,
@@ -122,6 +121,21 @@ namespace Tools
                     std::fprintf(stderr, "ERROR: invalid DatumType\n");
                     return nullptr;
             }
+        }
+
+        std::vector<float*> GetImages(DatumType type, std::size_t start, std::size_t end) const
+        {
+            std::vector<float*> images;
+
+            for (std::size_t i = start; i < end; ++i)
+            {
+                float* data = GetImage(type, i);
+                if (data)
+                {
+                    images.push_back(data);
+                }
+            }
+            return images;
         }
 
         int GetWidth() const { return mWidth; }

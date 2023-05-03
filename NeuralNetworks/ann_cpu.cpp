@@ -40,6 +40,7 @@ namespace NeuralNetworks
 
     public:
         Matrix(std::uint32_t rowCount, std::uint32_t colCount);
+        Matrix(float* data, std::uint32_t rowCount, std::uint32_t colCount);
 
         std::uint32_t GetRowCount() const { return mRowCount; }
         std::uint32_t GetColCount() const { return mColCount; }
@@ -76,6 +77,7 @@ namespace NeuralNetworks
         Matrix& operator*=(float);
         Matrix& operator/=(float);
 
+        Matrix Multiply(const Matrix&) const;
         Matrix Transpose() const;
 
         std::vector<float> GetRow(std::uint32_t row) const;
@@ -94,6 +96,18 @@ namespace NeuralNetworks
         }
 
         void Print() const;
+
+        Matrix& SetZero()
+        {
+            for (std::uint32_t row = 0; row < mRowCount; ++row)
+            {
+                for (std::uint32_t col = 0; col < mColCount; ++col)
+                {
+                    SetElement(row, col) = 0.0f;
+                }
+            }
+            return *this;
+        }
     };
 
     ////////////////////////////////////////
@@ -119,6 +133,23 @@ namespace NeuralNetworks
         : mRowCount{rowCount}, mColCount{colCount}, mData(rowCount * colCount)
     {
         assert(mRowCount > 0 && mColCount > 0);
+    }
+
+    ////////////////////////////////////////
+    Matrix::Matrix(float* data, std::uint32_t rowCount, std::uint32_t colCount)
+        : mRowCount{rowCount}, mColCount{colCount}, mData(rowCount * colCount)
+    {
+        assert(data != nullptr && mRowCount > 0 && mColCount > 0);
+
+        std::uint32_t i{};
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                SetElement(row, col) = data[i];
+                ++i;
+            }
+        }
     }
 
     ////////////////////////////////////////
@@ -384,6 +415,22 @@ namespace NeuralNetworks
     }
 
     ////////////////////////////////////////
+    Matrix Matrix::Multiply(const Matrix& other) const
+    {
+        assert(mRowCount == other.mRowCount && mColCount == other.mColCount);
+
+        Matrix matrix(mRowCount, mColCount);
+        for (std::uint32_t row = 0; row < mRowCount; ++row)
+        {
+            for (std::uint32_t col = 0; col < mColCount; ++col)
+            {
+                matrix.SetElement(row, col) = GetElement(row, col) * other.GetElement(row, col);
+            }
+        }
+        return matrix;
+    }
+
+    ////////////////////////////////////////
     Matrix Matrix::Transpose() const
     {
         Matrix matrix(mColCount, mRowCount);
@@ -460,7 +507,6 @@ namespace NeuralNetworks
         std::vector<Matrix> mWeights;
         std::vector<float> mBiases;
 
-        void CreateRandomBiases(float min, float max);
         void CreateRandomWeights(std::uint32_t inputLayerNeuronCount,
                                  std::uint32_t outputLayerNeuronCount,
                                  std::uint32_t hiddenLayerNeuronCount,
@@ -504,20 +550,6 @@ namespace NeuralNetworks
     };
 
     ////////////////////////////////////////
-    void ANN::CreateRandomBiases(float min, float max)
-    {
-        assert(min < max);
-
-        std::random_device rd;
-        std::uniform_real_distribution dist(min, max);
-
-        for (std::size_t i = 0; i < mWeights.size(); ++i)
-        {
-            mBiases.push_back(dist(rd));
-        }
-    }
-
-    ////////////////////////////////////////
     void ANN::CreateRandomWeights(std::uint32_t inputLayerNeuronCount,
                                   std::uint32_t outputLayerNeuronCount,
                                   std::uint32_t hiddenLayerNeuronCount,
@@ -559,7 +591,8 @@ namespace NeuralNetworks
         : mInputLayerNeuronCount{inputLayerNeuronCount},
           mOutputLayerNeuronCount{outputLayerNeuronCount},
           mHiddenLayerCount{hiddenLayerCount},
-          mHiddenLayerNeuronCount{hiddenLayerNeuronCount}
+          mHiddenLayerNeuronCount{hiddenLayerNeuronCount},
+          mBiases(mHiddenLayerCount + 1, 1.0f)
     {
 #ifdef _DEBUG
         std::printf("Initializing ANN at %p with %u input neurons, %u output neurons, %u hidden layers and %u neurons in each hidden layer\n", reinterpret_cast<void*>(this),
@@ -570,7 +603,6 @@ namespace NeuralNetworks
 #endif
 
         CreateRandomWeights(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
-        CreateRandomBiases(0.0f, 1.0f);
 
 #ifdef _DEBUG
         std::printf("ANN at %p is initialized\n\n", reinterpret_cast<void*>(this));
@@ -584,20 +616,20 @@ namespace NeuralNetworks
 
         if (mHiddenLayerCount == 0)
         {
-            assert(mWeights.size() == 1);
+            assert(mWeights.size() == 1 && mBiases.size() == 1);
 
-            return ApplyActivationToMatrix(mWeights[0] * input, SigmoidActivation);
+            return ApplyActivationToMatrix(mWeights[0] * input + mBiases[0], SigmoidActivation);
         }
         else
         {
-            assert(mWeights.size() > 1);
+            assert(mWeights.size() > 1 && mBiases.size() > 1);
 
-            Matrix hiddenLayerOutput = ApplyActivationToMatrix(mWeights[0] * input, ReLUActivation);
+            Matrix hiddenLayerOutput = ApplyActivationToMatrix(mWeights[0] * input + mBiases[0], ReLUActivation);
             for (std::uint32_t i = 1; i < GetHiddenLayerCount(); ++i)
             {
-                hiddenLayerOutput = ApplyActivationToMatrix(mWeights[i] * hiddenLayerOutput, ReLUActivation);
+                hiddenLayerOutput = ApplyActivationToMatrix(mWeights[i] * hiddenLayerOutput + mBiases[i], ReLUActivation);
             }
-            return ApplyActivationToMatrix(mWeights[mWeights.size() - 1] * hiddenLayerOutput, SigmoidActivation);
+            return ApplyActivationToMatrix(mWeights.back() * hiddenLayerOutput + mBiases.back(), SigmoidActivation);
         }
     }
 
@@ -640,30 +672,94 @@ namespace NeuralNetworks
 
         std::uint32_t batchCount{ static_cast<std::uint32_t>(givenInputs.size()) };
 
-        if (mHiddenLayerCount == 0)
+        std::vector<Matrix> averageInputs;
+        std::vector<Matrix> averageOutputs;
+        std::vector<Matrix> averageErrors;
+
+        averageInputs.push_back(Matrix(mInputLayerNeuronCount, 1));
+        for (std::uint32_t i = 0; i < GetHiddenLayerCount(); ++i)
         {
-            assert(mWeights.size() == 1);
+            averageInputs.push_back(Matrix(mHiddenLayerNeuronCount, 1));
+        }
 
-            Matrix averageError(mOutputLayerNeuronCount, 1);
-            Matrix averageInput(mInputLayerNeuronCount, 1);
-            Matrix averageOutput(mOutputLayerNeuronCount, 1);
+        for (std::uint32_t i = 0; i < GetHiddenLayerCount(); ++i)
+        {
+            averageOutputs.push_back(Matrix(mHiddenLayerNeuronCount, 1));
+        }
+        averageOutputs.push_back(Matrix(mOutputLayerNeuronCount, 1));
 
-            for (std::uint32_t i = 0; i < batchCount; ++i)
+        averageErrors.push_back(Matrix(mOutputLayerNeuronCount, 1));
+        for (std::uint32_t i = static_cast<std::uint32_t>(mWeights.size()) - 1; i > 0; --i)
+        {
+            averageErrors.push_back((mWeights[i].Transpose() * averageErrors.back()).SetZero());
+        }
+        std::ranges::reverse(averageErrors);
+
+        for (std::uint32_t i = 0; i < batchCount; ++i)
+        {
+            std::vector<Matrix> outputs;
+
+            averageInputs[0] += givenInputs[i];
+            outputs.push_back(ApplyActivationToMatrix(mWeights[0] * givenInputs[i] + mBiases[0], mHiddenLayerCount > 0 ? ReLUActivation : SigmoidActivation));
+            averageOutputs[0] += outputs[0];
+
+            for (std::uint32_t j = 1; j < GetHiddenLayerCount(); ++j)
             {
-                averageInput += givenInputs[i];
-
-                Matrix output = ApplyActivationToMatrix(mWeights[0] * givenInputs[i], SigmoidActivation);
-                averageOutput += output;
-
-                averageError += expectedOutputs[i] - output;
+                averageInputs[j] += outputs[j - 1];
+                outputs.push_back(ApplyActivationToMatrix(mWeights[j] * outputs[j - 1] + mBiases[j], ReLUActivation));
+                averageOutputs[j] += outputs[j];
             }
 
-            averageError /= static_cast<float>(batchCount);
-            averageInput /= static_cast<float>(batchCount);
-            averageOutput /= static_cast<float>(batchCount);
+            if (mHiddenLayerCount > 0)
+            {
+                averageInputs.back() += outputs.back();
+                outputs.push_back(ApplyActivationToMatrix(mWeights.back() * outputs.back() + mBiases.back(), SigmoidActivation));
+                averageOutputs.back() += outputs.back();
+            }
 
-            mWeights[0] += averageError * ApplyActivationToMatrix(averageOutput, SigmoidDerivative) * averageInput.Transpose() * learningRate;
+            std::vector<Matrix> errors;
+            errors.push_back(expectedOutputs[i] - outputs.back());
+            for (std::uint32_t j = static_cast<std::uint32_t>(averageErrors.size() - 2); j != std::numeric_limits<std::uint32_t>::max(); --j)
+            {
+                errors.push_back(mWeights[j + 1].Transpose() * errors.back());
+            }
+            std::ranges::reverse(errors);
+
+            for (std::uint32_t j = 0; j < static_cast<std::uint32_t>(averageErrors.size()); ++j)
+            {
+                averageErrors[j] += errors[j];
+            }
         }
+
+        for (Matrix& averageInput : averageInputs)
+        {
+            averageInput /= static_cast<float>(batchCount);
+        }
+
+        for (Matrix& averageOutput : averageOutputs)
+        {
+            averageOutput /= static_cast<float>(batchCount);
+        }
+
+        for (Matrix& averageError : averageErrors)
+        {
+            averageError /= static_cast<float>(batchCount);
+        }
+
+        Matrix gradient = averageErrors.back().Multiply(ApplyActivationToMatrix(averageOutputs.back(), SigmoidDerivative)) * averageInputs.back().Transpose() * learningRate;
+        mWeights.back() += gradient;
+        mBiases.back() += SigmoidDerivative(mBiases.back()) * learningRate;
+
+        for (std::uint32_t i = static_cast<std::uint32_t>(averageErrors.size() - 2); i != std::numeric_limits<std::uint32_t>::max(); --i)
+        {
+            Matrix newGradient = averageErrors[i].Multiply(ApplyActivationToMatrix(averageOutputs[i], ReLUDerivative)) * averageInputs[i].Transpose() * learningRate;
+            mWeights[i] += newGradient;
+            mBiases[i] += ReLUDerivative(mBiases[i]) * learningRate;
+        }
+
+#ifdef _DEBUG
+        std::printf(" #");
+#endif
     }
 
     ////////////////////////////////////////
@@ -723,35 +819,37 @@ namespace NeuralNetworks
         return output;
     }
 
-    ////////////////////////////////////////
-    static float TestForSpecificCategory(const ANN& ann, const Tools::DataLoader& dataLoader, Tools::DatumType category)
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    static std::size_t DataCount(const Tools::DataLoader& dataLoader, Tools::DatumType category)
     {
-        assert(Tools::DatumType::TestNormal == category ||
-               Tools::DatumType::TestBacteria == category ||
-               Tools::DatumType::TestVirus == category);
-
-        std::size_t count = [&]() -> std::size_t
+        switch (category)
         {
-            switch (category)
-            {
-                case Tools::DatumType::TestNormal:
-                    return dataLoader.GetTestNormalCount();
-                case Tools::DatumType::TestBacteria:
-                    return dataLoader.GetTestBacteriaCount();
-                case Tools::DatumType::TestVirus:
-                    return dataLoader.GetTestVirusCount();
-                case Tools::DatumType::TrainNormal:
-                case Tools::DatumType::TrainBacteria:
-                case Tools::DatumType::TrainVirus:
-                default:
-                    return 0;
-            }
-        }();
+            case Tools::DatumType::TestNormal:
+                return dataLoader.GetTestNormalCount();
+            case Tools::DatumType::TestBacteria:
+                return dataLoader.GetTestBacteriaCount();
+            case Tools::DatumType::TestVirus:
+                return dataLoader.GetTestVirusCount();
+            case Tools::DatumType::TrainNormal:
+                return dataLoader.GetTrainNormalCount();
+            case Tools::DatumType::TrainBacteria:
+                return dataLoader.GetTrainBacteriaCount();
+            case Tools::DatumType::TrainVirus:
+                return dataLoader.GetTrainVirusCount();
+            default:
+                return 0;
+        }
+    }
 
-        float correctCount{};
-        for (std::size_t i = 0; i < count; ++i)
+    ////////////////////////////////////////
+    static void Test(const ANN& ann, const Tools::DataLoader& dataLoader)
+    {
+        std::uint32_t correctCount{};
+
+        std::vector<std::pair<Tools::DatumType, float*>> testingImages = dataLoader.GetAllTestingImagesShuffled();
+        for (auto [ category, data ] : testingImages)
         {
-            Matrix actualOutput = ann.FeedForward(dataLoader.GetImage(category, i), dataLoader.GetSize());
+            Matrix actualOutput = ann.FeedForward(data, dataLoader.GetSize());
             Matrix expectedOutput = ComputeCorrectOutput(category);
 
             if (ArgMaxRow(actualOutput) == ArgMaxRow(expectedOutput))
@@ -759,35 +857,51 @@ namespace NeuralNetworks
                 ++correctCount;
             }
         }
-        return correctCount / static_cast<float>(count);
+
+#ifdef _DEBUG
+        std::printf("Model accuracy: %.6f\n", static_cast<float>(correctCount) / static_cast<float>(testingImages.size()));
+#endif
     }
 
     ////////////////////////////////////////
-    static float TestANN(const ANN& ann, const Tools::DataLoader& dataLoader)
+    static void Train(ANN& ann, const Tools::DataLoader& dataLoader, std::uint32_t epochCount, std::uint32_t batchCount, float learningRate)
     {
-#ifdef _DEBUG
-        std::printf("Starting testing ...\n");
-#endif
+        assert(dataLoader.GetSize() == ann.GetInputNeuronCount());
 
-        float accuracy{};
+        std::vector<std::pair<Tools::DatumType, float*>> trainingImages = dataLoader.GetAllTrainingImagesShuffled();
 
-        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestNormal);
-        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestBacteria);
-        accuracy += TestForSpecificCategory(ann, dataLoader, Tools::DatumType::TestVirus);
-
-#ifdef _DEBUG
-        std::printf("Testing has finished\n");
-#endif
-
-        return accuracy / 3.0f;
-    }
-
-    ////////////////////////////////////////
-    static void TrainANN(ANN& ann, const Tools::DataLoader& dataLoader, std::uint32_t epochCount)
-    {
-        // train normal images
         for (std::uint32_t i = 0; i < epochCount; ++i)
         {
+#ifdef _DEBUG
+            std::printf("Training for epoch %u:", i);
+#endif
+
+            for (std::size_t start = 0; start < trainingImages.size(); start += batchCount)
+            {
+                std::vector<Matrix> givenInputs;
+                std::vector<Matrix> expectedOutputs;
+
+                for (std::size_t currentBatch = start; currentBatch < start + batchCount; ++currentBatch)
+                {
+                    if (currentBatch < trainingImages.size())
+                    {
+                        auto [ category, imageData ] = trainingImages[currentBatch];
+
+                        givenInputs.push_back(Matrix(imageData, ann.GetInputNeuronCount(), 1));
+                        expectedOutputs.push_back(ComputeCorrectOutput(category));
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                ann.Train(givenInputs, expectedOutputs, learningRate);
+            }
+            std::putchar('\n');
+
+#ifdef _DEBUG
+            Test(ann, dataLoader);
+#endif
         }
     }
 }
@@ -795,19 +909,22 @@ namespace NeuralNetworks
 ////////////////////////////////////////
 int main(int argc, char** argv)
 {
+    std::setbuf(stdout, NULL);
+
     Tools::DataLoader dataLoader("PneumoniaData");
 
-    std::uint32_t inputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetSize()) };
-    std::uint32_t outputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetCategoryCount()) };
-    std::uint32_t hiddenLayerNeuronCount{ 100 };
-    std::uint32_t hiddenLayerCount{ 0 };
+    const std::uint32_t inputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetSize()) };
+    const std::uint32_t outputLayerNeuronCount{ static_cast<std::uint32_t>(dataLoader.GetCategoryCount()) };
+    const std::uint32_t hiddenLayerNeuronCount{ 100 };
+    const std::uint32_t hiddenLayerCount{ 2 };
 
     NeuralNetworks::ANN ann(inputLayerNeuronCount, outputLayerNeuronCount, hiddenLayerNeuronCount, hiddenLayerCount);
 
-    std::uint32_t epochCount{ 10 };
-    NeuralNetworks::TrainANN(ann, dataLoader, epochCount);
+    const std::uint32_t epochCount{ 100 };
+    const std::uint32_t batchCount{ 10 };
+    const float learningRate{ 0.1f };
 
-    std::printf("Model accuracy: %.6f\n", NeuralNetworks::TestANN(ann, dataLoader));
+    NeuralNetworks::Train(ann, dataLoader, epochCount, batchCount, learningRate);
 
     return 0;
 }

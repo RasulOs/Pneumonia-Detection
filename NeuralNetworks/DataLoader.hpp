@@ -21,6 +21,8 @@
 #include <vector>
 #include <filesystem>
 #include <algorithm>
+#include <utility>
+#include <random>
 
 #include <cstdint>
 #include <cstdio>
@@ -136,6 +138,36 @@ namespace Tools
                 }
             }
             return images;
+        }
+
+        std::vector<std::pair<DatumType, float*>> GetAllTrainingImagesShuffled() const
+        {
+            std::vector<std::pair<DatumType, float*>> data;
+
+            for (float* imageData : mTrainNormalImages)     { data.push_back({ DatumType::TrainNormal, imageData }); }
+            for (float* imageData : mTrainBacteriaImages)   { data.push_back({ DatumType::TrainBacteria, imageData }); }
+            for (float* imageData : mTrainVirusImages)      { data.push_back({ DatumType::TrainVirus, imageData }); }
+
+            std::random_device rd;
+            std::mt19937 twister(rd());
+            std::ranges::shuffle(data, twister);
+
+            return data;
+        }
+
+        std::vector<std::pair<DatumType, float*>> GetAllTestingImagesShuffled() const
+        {
+            std::vector<std::pair<DatumType, float*>> data;
+
+            for (float* imageData : mTestNormalImages)     { data.push_back({ DatumType::TestNormal, imageData }); }
+            for (float* imageData : mTestBacteriaImages)   { data.push_back({ DatumType::TestBacteria, imageData }); }
+            for (float* imageData : mTestVirusImages)      { data.push_back({ DatumType::TestVirus, imageData }); }
+
+            std::random_device rd;
+            std::mt19937 twister(rd());
+            std::ranges::shuffle(data, twister);
+
+            return data;
         }
 
         int GetWidth() const { return mWidth; }

@@ -46,6 +46,10 @@ print(train_normal_directory)
 print(test_normal_directory)
 print(validation_normal_directory)
 
+# %% 
+# Size of the output images (after resizing)
+output_image_size = (150, 150)
+
 # %%
 def images_and_labels(list_of_directories: list, label):
     list_of_images = []
@@ -225,8 +229,8 @@ print(list_of_normal_cases[0][0])
 print(list_of_normal_cases[0][1])
 print(list_of_normal_cases[0][2])
 
-normal_cases = resize_images(list_of_normal_cases, (150, 150))
-pneumonia_cases = resize_images(list_of_pneumonia_cases, (150, 150))
+normal_cases = resize_images(list_of_normal_cases, output_image_size)
+pneumonia_cases = resize_images(list_of_pneumonia_cases, output_image_size)
 
 # %%
 print(normal_cases[0][1])
@@ -310,6 +314,16 @@ for i in range(4):
     plt.imshow(plt.imread(f"{diff_directory}/diff{i}.png"))
     plt.show()
 
+# %%
+# Show a subplot of 4 images with differences between normal and pneumonia cases
+fig = plt.figure(figsize=(16, 5))
+fig.suptitle('Difference between normal and pneumonia cases', size=22)
+
+for i, img in enumerate(os.listdir(diff_directory)[:4]):
+    img = plt.imread(diff_directory / img)
+    plt.subplot(1, 4, i+1, frameon=False)
+    plt.imshow(img)
+plt.show()
 
 # %%
 def show_pixel_distribution(sample_normal_img, title, combined=False):
@@ -367,7 +381,7 @@ normal_generated = image_generator.flow_from_directory(
     save_format='jpeg',
     class_mode='input',
     shuffle=True,
-    target_size=(150, 150)
+    target_size=output_image_size
 )
 
 # %%

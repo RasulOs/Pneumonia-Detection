@@ -17,6 +17,7 @@ import tensorflow as tf
 from keras.utils import load_img, img_to_array
 from PIL import Image, ImageChops
 from keras.preprocessing.image import ImageDataGenerator
+import random
 
 # %% 
 # Import dataset
@@ -70,8 +71,9 @@ list_of_normal_cases = images_and_labels([train_normal_directory,
 list_of_pneumonia_cases = images_and_labels([train_pneumonia_directory, 
                                              test_pneumonia_directory, validation_pneumonia_directory], 1)
 
-shuffle(list_of_normal_cases)
-shuffle(list_of_pneumonia_cases)
+random.seed(42)
+random.shuffle(list_of_normal_cases)
+random.shuffle(list_of_pneumonia_cases)
 
 # %%
 print(len(list_of_normal_cases), len(list_of_pneumonia_cases), "\n")

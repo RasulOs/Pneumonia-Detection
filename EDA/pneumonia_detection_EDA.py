@@ -347,7 +347,7 @@ show_pixel_distribution(sample_pneumonia_img, 'Pneumonia Chest X-Ray')
 
 
 show_pixel_distribution(sample_normal_img, 'Normal and Pneumonia Chest X-Ray', combined=True)
-show_pixel_distribution(sample_pneumonia_img, 'Normal and Pneumonia Pneumonia Chest X-Ray', combined=True)
+show_pixel_distribution(sample_pneumonia_img, 'Normal and Pneumonia Chest X-Ray', combined=True)
 plt.show()
 
 

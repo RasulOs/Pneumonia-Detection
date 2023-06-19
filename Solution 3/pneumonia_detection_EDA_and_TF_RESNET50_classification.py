@@ -515,9 +515,13 @@ model = Model(inputs=resnet50_model.inputs, outputs=output)
 print(model.summary())
 
 # %%
+print(f"Number of layers in the base model: {len(resnet50_model.layers)}")
 for i, each_layer in enumerate(resnet50_model.layers):
-    print(i, each_layer.name)
+    # if i < len(resnet50_model.layers) - 10:
+
     each_layer.trainable = False
+
+    print(f"{i}, {each_layer.name} is trainable: {each_layer.trainable}")
 
 # %%
 # Compile the model
@@ -539,21 +543,21 @@ print("\nShape of test labels is:", y_test.shape)
 print("Shape of validation labels is:", y_val.shape)
 
 # %%
-history_vgg16 = model.fit(x=X_train, y=y_train, epochs=2, validation_data=(X_val, y_val), batch_size=16)
+history_resnet50 = model.fit(x=X_train, y=y_train, epochs=2, validation_data=(X_val, y_val), batch_size=16)
 
 # %%
 # Plot training and validation results
 plt.figure(figsize=(10, 5))
 
 plt.subplot(2, 2, 1)
-plt.plot(history_vgg16.history['accuracy'], label='Train Accuracy')
-plt.plot(history_vgg16.history['val_accuracy'], label='Validation Accuracy')
+plt.plot(history_resnet50.history['accuracy'], label='Train Accuracy')
+plt.plot(history_resnet50.history['val_accuracy'], label='Validation Accuracy')
 plt.legend(loc='lower right')
 plt.title('Train and Validation Accuracy')
 
 plt.subplot(2, 2, 2)
-plt.plot(history_vgg16.history['loss'], label='Train Loss')
-plt.plot(history_vgg16.history['val_loss'], label='Validation Loss')
+plt.plot(history_resnet50.history['loss'], label='Train Loss')
+plt.plot(history_resnet50.history['val_loss'], label='Validation Loss')
 plt.legend(loc='upper right')
 plt.title('Train and Validation Loss')
 

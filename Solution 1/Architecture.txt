@@ -1,0 +1,22 @@
+Pretrained VGG16 (weights from imagenet). All layers were pretrained 
+except the last 9 layers. They were trained again.
+
+Additional 2 dense Neural Net were added.
+
+	1. 256 neurons with relu activation function.
+
+	2. 1 neuron with sigmoid activation function.
+
+Optimizer is adam with a default learning rate (0.001).
+
+Loss function: BinaryCrossEntropy.
+
+2 epochs.
+
+Input for CNN: (224x224x3). 224 pixels with 3 chanels (RGB).
+
+Batch size 16. 
+
+Train dataset = 80%.
+Validation dataset size = 10%.
+Test dataset size = 10%.

@@ -13,7 +13,7 @@ Loss function: BinaryCrossEntropy.
 
 2 epochs.
 
-Input for CNN: (224x224x3). 224 pixels with 3 chanels (RGB).
+Input for CNN: (224x224x3). 224 pixels each side with 3 chanels (RGB).
 
 Batch size 16. 
 

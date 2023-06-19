@@ -512,7 +512,7 @@ print("Shape of list_of_all_cases_resized_labels_np:", list_of_all_cases_resized
 print("Sample label: ", list_of_all_cases_resized_labels_np[0])
 
 # %%
-pretrained_model = VGG16(weights='imagenet', include_top=False, input_shape=output_image_shape)
+pretrained_model = InceptionV3(weights='imagenet', include_top=False, input_shape=output_image_shape)
 
 # %%
 flat1 = Flatten()(pretrained_model.layers[-1].output)

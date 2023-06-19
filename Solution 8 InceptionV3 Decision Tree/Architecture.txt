@@ -1,0 +1,39 @@
+Pretrained Inception V3 (weights from imagenet). All layers were pretrained.
+Nothing was trained again in CNN.
+
+Additional 2 dense Neural Net were added.
+
+	1. 256 neurons with relu activation function.
+
+	2. 1 neuron with sigmoid activation function.
+
+Optimizer is adam with a learning rate = 0.000001
+
+Loss function: BinaryCrossEntropy.
+
+2 epochs.
+
+Input for CNN: (224x224x3). 224 pixels each side with 3 chanels (RGB).
+
+Batch size 16. 
+
+Train dataset = 80%.
+Validation dataset size = 10%.
+Test dataset size = 10%.
+
+************************************ Decision Tree 
+
+For Decision Tree, the weights from 1 neural net (256 neurons) were taken
+as input for decision tree. Input size of decision tree is 256 + 1(bias). 
+
+Maximum depth of Decision Tree is 6.
+
+Accuracy (of Decision Tree) on test set: 93.00%
+
+Confusion matrix (For Decision Tree):
+
+	[[156  23]
+	[ 18 389]]
+ 
+
+
